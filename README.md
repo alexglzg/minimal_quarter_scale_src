@@ -1,65 +1,25 @@
-# MPCs-for-QuarterScale-Roboat
-BioPd, MPC, Adaptive MPC and Robust MPC
+# Simulation Environment for Quarter Scale Roboat ASV
 
-roslaunch roboat_launch loam_master.launch
+## To run lake environment
 
-roslaunch roboat_loam online.launch
+roslaunch gazebo_sim lake.launch
 
-# MPC
+- TODO: check why lake model doesn't show up in some installations
 
-roslaunch roboat_core mpc_dist_sim.launch
+- Check for multiple obstacle scenarios inside iros2026_scenarios including lanes, intersections, buoys, etc.
 
-# MPC_CBF
+## To run roboat simulation
 
-roslaunch roboat_core mpc_cbf_dist_sim.launch
+roslaunch gazebo_sim gazebo_roboat.launch
 
-# Sliding Mode for Quarter Scale Roboat
-## For experiments:
+- Spawns roboat with velodyne lidar and custom dynamics
+- Check launch file to include disturbances from wind, waves, and currents
 
-roslaunch roboat_launch loam_master.launch
+## Multiple perception systems
 
-roslaunch roboat_loam online.launch
+roslaunch roboat_planning run_boat
 
-roslaunch roboat_core antsm.launch
+- Filters LiDAR data
+- Creates occupancy grid maps
 
-rosbags are automatically created
-
-## For simulations:
-
-roslaunch quarterscalesimulation dist_sim_node.launch
-
-roslaunch roboat_core antsm.launch
-
-
-## Order of experiments:
-
-### Experiment 1: Trajectory tracking without payload
-
-After running loam_master and slam, place the robot approximately in [0,-3], facing forward
-
-run roslaunch roboat_core antsm.launch
-
-### Experiment 2: Trajectory tracking with 10-pound payload 
-
-After running loam_master and slam, place the robot approximately in [0,-3], facing forward
-
-Place 10 pound payload on top
-
-run roslaunch roboat_core antsm_10p.launch
-
-### Experiment 3: Trajectory tracking with 20-pound payload 
-
-After running loam_master and slam, place the robot approximately in [0,-3], facing forward
-
-Place 20 pound payload on top
-
-run roslaunch roboat_core antsm_20p.launch
-
-### Tuning
-
-If the performance is too aggressive or oscilatory:
-Reduce k_x, k_y, k_psi. Note: k_x and k_y should have the same value.
-Increase mu_x, mu_y, mu_psi. Note: mu_x and mu_y should have the same value.
-
-k relates to how fast the gain adapts 
-mu is the expected accuracy of the performance
+- Check for different occupancy grid-based perception system inside obstacle_detector package, which fits ellipses and circles to obstacles
