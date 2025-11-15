@@ -1,0 +1,16 @@
+<launch>
+
+    <!-- Wind and waves simulation -->
+
+    <node name="wind_and_waves" type="wind_and_waves" pkg="quarterscalesimulation" >
+    <param name = "beta_wave" value = "0.0" />
+    <param name = "stddev_wF" value = "1.0" />
+    <param name = "stddev_dF" value = "0.5" />
+    <param name = "stddev_wN" value = "0.1" />
+    <param name = "stddev_dN" value = "0.05" />
+    <param name = "beta_wind" value = "0.0" />
+    <param name = "V_wind" value = "2.05" />
+    <param name = "scale_factor" value = "3" />
+    </node>
+
+</launch>

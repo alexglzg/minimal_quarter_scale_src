@@ -1,0 +1,25 @@
+<launch>
+
+    <!-- Quarter scale simulator with disturbances and linear drag -->
+    <param name = "/x_0" value = "0.0" />
+    <param name = "/y_0" value = "3.0" />
+    <param name = "psi" value = "0.0" />
+
+    <node name="qs_tf2_broadcaster" type="qs_tf2_broadcaster" pkg="quarterscalesimulation" />
+
+    <node name="qs_sim_node" type="qs_sim_node" pkg="quarterscalesimulation" />
+
+    <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
+    </include>
+    
+    <include file="$(find quarterscalesimulation)/launch/currents.launch">
+    </include>
+
+    <arg name="model" default="$(find quarterscalesimulation)/urdf/qs.urdf"/>
+
+    <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+    <node  name="rviz" pkg="rviz" type="rviz" args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz" />
+
+</launch>

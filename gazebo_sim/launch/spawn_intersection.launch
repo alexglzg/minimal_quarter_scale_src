@@ -1,0 +1,58 @@
+<launch>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="vlane1" />
+        <arg name="x" value="-0.5" />
+        <arg name="y" value="-1.35" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="0.0" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/intersection_lane.urdf" />
+    </include>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="vlane2" />
+        <arg name="x" value="-0.5" />
+        <arg name="y" value="1.35" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="0.0" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/intersection_lane.urdf" />
+    </include>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="hlane1" />
+        <arg name="x" value="4.65" />
+        <arg name="y" value="-6.2" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="1.57" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/intersection_lane.urdf" />
+    </include>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="hlane2" />
+        <arg name="x" value="4.65" />
+        <arg name="y" value="6.2" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="1.57" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/intersection_lane.urdf" />
+    </include>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="hlane3" />
+        <arg name="x" value="7.35" />
+        <arg name="y" value="0.0" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="1.57" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/long_lane.urdf" />
+    </include>
+
+</launch>

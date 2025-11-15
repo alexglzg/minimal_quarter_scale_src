@@ -1,0 +1,23 @@
+roboat_planning:
+  # Topics
+  _pointCloudTopic: "points_raw"
+
+  # Occupancy Map Params
+  _mapResolution: 0.05
+  _occuMapInflation: 0.225 #0.52
+  _occuMapField: 0.4
+
+  # Laser scan params
+  _sensorRangeLimitMin: 0.05
+  _sensorRangeLimitMax: 2.0 
+  _sensorHeightLimitUpper: 1.0
+  _sensorHeightLimitDown: -0.05
+  _sensorCloudTimeout: 0.5
+
+  # Alternative Path Params
+  _samplingTipMargin: 0.5 # 1.0
+  _samplingOutMargin: 0.2 # 1.0 
+  _pathResolution: 0.1
+  _maxPathDistance: 7.0
+  _rollOutDensity: 0.1
+  _rollOutNumber: 15

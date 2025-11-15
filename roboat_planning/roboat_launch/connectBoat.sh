@@ -1,0 +1,1 @@
+sshpass -p 'sclrobotics' ssh -o StrictHostKeyChecking=no -X roboat@192.168.31.106

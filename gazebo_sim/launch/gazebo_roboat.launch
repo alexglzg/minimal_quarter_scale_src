@@ -1,0 +1,32 @@
+<launch>
+
+
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder '$(find gazebo_sim)/urdf/roboat.urdf.xacro'" />
+
+
+    <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model"
+              args="-urdf -model roboat -param robot_description -x 0 -y 0.1 -z 0.15" />
+
+    <node name="qs_gazebo_broadcaster" type="qs_gazebo_broadcaster" pkg="quarterscalesimulation" />
+
+    <!-- Quarter scale simulator with disturbances and linear drag -->
+    <param name = "/x_0" value = "0.0" />
+    <param name = "/y_0" value = "0.1" />
+    <param name = "/psi" value = "0.15" />
+
+    <!-- <node name="qs_tf2_broadcaster" type="qs_tf2_broadcaster" pkg="quarterscalesimulation" /> -->
+
+    <node name="qs_sim_node" type="qs_sim_node" pkg="quarterscalesimulation" />
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+    <node  name="rviz" pkg="rviz" type="rviz" args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz" />
+
+    <!-- <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
+    </include>
+    
+    <include file="$(find quarterscalesimulation)/launch/currents.launch">
+    </include> -->
+
+</launch>

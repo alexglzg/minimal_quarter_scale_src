@@ -1,0 +1,25 @@
+<launch>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="lane1" />
+        <arg name="x" value="6" />
+        <arg name="y" value="-1.35" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="0.0" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/lane.urdf" />
+    </include>
+
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+        <arg name="robot_name" value="lane2" />
+        <arg name="x" value="6" />
+        <arg name="y" value="1.35" />
+        <arg name="z" value="0.0" />
+        <arg name="roll" value="0.0" />
+        <arg name="pitch" value="0.0" />
+        <arg name="yaw" value="0.0" />
+        <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/lane.urdf" />
+    </include>
+
+</launch>

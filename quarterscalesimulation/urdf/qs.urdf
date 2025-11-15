@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<robot name="qs">
+
+  <material name="orange">
+    <color rgba="1 0.2 0 1"/>
+  </material>
+
+  <link name="roboat">
+    <visual>
+      <origin rpy="1.57 0 0" xyz="-0.46 0.225 -0.12"/>
+      <geometry>
+        <mesh filename="package://quarterscalesimulation/meshes/hull.STL" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="orange"/>
+    </visual>
+
+    <!--collision>
+    	<origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="1 0.75 0.5"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <origin rpy="3.1416 0 0" xyz="0 0 0"/>
+      <mass value="30"/>
+      <inertia
+        ixx="1.0" ixy="0.0" ixz="0.0"
+        iyy="1.0" iyz="0.0"
+        izz="4.1"/>
+    </inertial-->
+
+
+  </link>
+</robot>
