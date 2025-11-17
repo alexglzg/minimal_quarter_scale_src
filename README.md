@@ -4,6 +4,8 @@
 
 roslaunch gazebo_sim lake.launch
 
+- Disable gazebo physics for it to work
+
 - TODO: check why lake model doesn't show up in some installations
 
 - Check for multiple obstacle scenarios inside iros2026_scenarios including lanes, intersections, buoys, etc.
