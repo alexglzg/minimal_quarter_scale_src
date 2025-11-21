@@ -195,6 +195,8 @@ Sim::Sim(ros::NodeHandle n)
     dynamic_pose.theta = state[2];
     
     odom.header.stamp = ros::Time::now();
+    odom.header.frame_id = "map";      
+    odom.child_frame_id = "base_link"; 
     odom.pose.pose.position.x = state[0];
     odom.pose.pose.position.y = -state[1];
     odom.pose.pose.position.z = 0.0;

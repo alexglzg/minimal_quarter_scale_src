@@ -6,8 +6,6 @@ roslaunch gazebo_sim lake.launch
 
 - Disable gazebo physics for it to work
 
-- TODO: check why lake model doesn't show up in some installations
-
 - Check for multiple obstacle scenarios inside iros2026_scenarios including lanes, intersections, buoys, etc.
 
 ## To run roboat simulation
@@ -25,3 +23,6 @@ roslaunch roboat_planning run_boat
 - Creates occupancy grid maps
 
 - Check for different occupancy grid-based perception system inside obstacle_detector package, which fits ellipses and circles to obstacles
+
+roslaunch obstacle_detector pcl_filter.launch
+- launches pcl-based pointcloud filter

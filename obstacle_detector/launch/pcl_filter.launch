@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="obstacle_detector" type="pcl_filter" name="pcl_filter" output="screen">
+    <param name="voxel_size" value="0.1"/>
+    <param name="height_min" value="-0.05"/>
+    <param name="height_max" value="2.0"/>
+    <param name="range_min" value="0.1"/>
+    <param name="range_max" value="10.0"/>
+  </node>
+</launch>

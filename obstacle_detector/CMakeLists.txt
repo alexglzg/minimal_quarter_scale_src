@@ -24,12 +24,15 @@ find_package(catkin REQUIRED COMPONENTS
     message_runtime
     roslib
     roboat_core
+    pcl_ros
+    pcl_conversions
+
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenCV REQUIRED QUIET)
-
+find_package(PCL REQUIRED QUIET)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -120,6 +123,7 @@ find_package(OpenCV REQUIRED QUIET)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES obstacle_detector
+   DEPENDS PCL OpenCV
    CATKIN_DEPENDS roboat_core
 #  DEPENDS system_lib
 )
@@ -134,12 +138,14 @@ include_directories(
  include
  ${catkin_INCLUDE_DIRS}
  ${OpenCV_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
 )
 
 # link directories
 link_directories(
 	include
-  ${OpenCV_LIBRARY_DIRS}
+  ${OpenCV_LIBRARY_DIRS} 
+  ${PCL_LIBRARY_DIRS}
 )
 
 ## Declare a C++ library
@@ -269,3 +275,7 @@ target_link_libraries(varyingSweptcapsuleVisualizer
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
+
+add_executable(pcl_filter src/pcl_filter.cpp)
+target_link_libraries(pcl_filter ${catkin_LIBRARIES})
+add_dependencies(pcl_filter ${catkin_EXPORTED_TARGETS})

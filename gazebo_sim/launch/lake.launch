@@ -1,5 +1,7 @@
 <launch>
 
+	<env name="GAZEBO_MODEL_PATH" value="$(find gazebo_sim)/models:$(optenv GAZEBO_MODEL_PATH)" />
+
 	<include file="$(find gazebo_ros)/launch/empty_world.launch">
 		<arg name="world_name" value="$(find gazebo_sim)/worlds/lake_world.world"/>
 		<!-- <arg name="world_name" value="$(find gazebo_sim)/worlds/world_wow.world"/> -->
