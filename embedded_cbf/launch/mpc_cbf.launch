@@ -18,19 +18,14 @@
         <param name="max_halfplanes" value="20"/>
         
         <!-- Cost weights -->
-        <param name="Q_x" value="10.0"/>
-        <param name="Q_y" value="10.0"/>
+        <param name="Q_x" value="1.0"/>
+        <param name="Q_y" value="1.0"/>
         <param name="Q_psi" value="0.0"/>
-        <param name="R_f1" value="0.1"/>
-        <param name="R_f2" value="0.1"/>
-        <param name="R_f3" value="0.2"/>
-        <param name="R_f4" value="0.2"/>
-        
-        <!-- Reference state -->
-        <!-- <param name="x_ref" value="6.0"/>
-        <param name="y_ref" value="0.0"/>
-        <param name="psi_ref" value="0.0"/> -->
-        
+        <param name="R_f1" value="0.5"/>
+        <param name="R_f2" value="0.5"/>
+        <param name="R_f3" value="1.0"/>
+        <param name="R_f4" value="1.0"/>
+                
         <!-- Boat dynamics (QuarterScale) -->
         <param name="system_dynamics/m11" value="16.9"/>
         <param name="system_dynamics/m22" value="30.5"/>

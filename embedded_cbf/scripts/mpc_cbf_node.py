@@ -5,6 +5,11 @@ Solves an OCP with Control Barrier Function constraints for obstacle avoidance.
 
 The polytope constraints are parameterized with a FIXED maximum size (20 halfplanes).
 Unused halfplanes are filled with dummy constraints that are always satisfied.
+
+REFERENCE FRAMES:
+- ROS topics (odom, polyhedron): ENU (x-forward, y-left, z-up)
+- MPC internal: NED (x-north, y-east, z-down)
+- Transformation: x_NED = x_ENU, y_NED = -y_ENU, psi_NED = -psi_ENU
 """
 
 import rospy
@@ -29,6 +34,9 @@ class MPCCBFNode:
         self.N_cbf = rospy.get_param('~N_cbf', 6)
         self.rate = rospy.get_param('~rate', 10.0)
         self.max_force = rospy.get_param('~max_force', 6.0)
+        self.max_surge = rospy.get_param('~max_surge', 0.3)
+        self.max_sway = rospy.get_param('~max_sway', 0.1)
+        self.max_yaw_rate = rospy.get_param('~max_yaw_rate', 1.0)
         self.gamma = rospy.get_param('~gamma', 0.8)
         self.max_approx = rospy.get_param('~max_approx', 5e-3)
 
@@ -53,7 +61,6 @@ class MPCCBFNode:
         ])
 
         # Reference state (updated via callback)
-        # Will be set by `ref_callback` when a `PoseStamped` arrives
         self.x_ref = np.array([0.0, 0.0, 0.0])
         self.ref_received = False
 
@@ -68,7 +75,7 @@ class MPCCBFNode:
         self.bb = rospy.get_param('~system_dynamics/bb', 0.08)
 
         # State dimensions
-        self.nx = 7  # [x, y, psi, u, v, r, s]
+        self.nx = 6  # [x, y, psi, u, v, r]
         self.nu = 4  # [F1, F2, F3, F4]
 
         # =====================================================================
@@ -80,9 +87,8 @@ class MPCCBFNode:
 
         # Initialize polytope with dummy values (Ax <= b convention from decomp)
         # Dummy: 0*x <= small_positive is always satisfied
-        # Use a modest value to avoid numerical issues in smooth min
         self.A_poly = np.zeros((self.max_halfplanes, 2))
-        self.b_poly = np.ones(self.max_halfplanes) * 10.0  # h = b - Ax = 10 for dummy
+        self.b_poly = np.ones(self.max_halfplanes) * 10.0
         self.n_active = 0
 
         # =====================================================================
@@ -103,18 +109,23 @@ class MPCCBFNode:
             '/polyhedron_array', PolyhedronArray, self.poly_callback, queue_size=1
         )
 
-        # Reference subscriber: updates target (x_ref, y_ref, yaw_ref)
         self.ref_sub = rospy.Subscriber(
             '/reference_pose', PoseStamped, self.ref_callback, queue_size=1
+        )
+
+        # subscriber to set reference point based on 2D RVIZ goal
+        self.ref_sub = rospy.Subscriber(
+            '/move_base_simple/goal', PoseStamped, self.rviz_callback, queue_size=1
         )
 
         rospy.loginfo("MPC-CBF Node initialized")
         rospy.loginfo(f"  Horizon: {self.N}, dt: {self.dt}, CBF steps: {self.N_cbf}")
         rospy.loginfo(f"  Max halfplanes: {self.max_halfplanes}")
         rospy.loginfo(f"  Robot size: {self.L_robot} x {self.W_robot}")
+        rospy.loginfo(f"  Frame: ROS/ENU -> MPC/NED (y and psi inverted)")
 
     def _boat_dynamics(self, x, u):
-        """QuarterScale boat dynamics."""
+        """QuarterScale boat dynamics in NED frame."""
         psi = x[2]
         u_vel = x[3]
         v_vel = x[4]
@@ -129,13 +140,12 @@ class MPCCBFNode:
             -self.d11 / self.m11 * u_vel + (F1 + F2) / self.m11,
             -self.d22 / self.m22 * v_vel + (F3 + F4) / self.m22,
             -self.d33 / self.m33 * r + (self.aa / (2 * self.m33)) * (F1 - F2) +
-                (self.bb / (2 * self.m33)) * (F3 - F4),
-            0  # s_dot
+                (self.bb / (2 * self.m33)) * (F3 - F4)
         )
         return dxdt
 
     def _robot_vertices_ca(self, x, y, psi):
-        """Get robot vertices in world frame."""
+        """Get robot vertices in world frame (NED)."""
         L, W = self.L_robot, self.W_robot
         c = ca.cos(psi)
         s = ca.sin(psi)
@@ -144,7 +154,7 @@ class MPCCBFNode:
         local_x = ca.vertcat(L/2, L/2, -L/2, -L/2)
         local_y = ca.vertcat(W/2, -W/2, -W/2, W/2)
 
-        # Transform to world
+        # Transform to world (NED)
         world_x = c * local_x - s * local_y + x
         world_y = s * local_x + c * local_y + y
 
@@ -154,31 +164,26 @@ class MPCCBFNode:
         """
         Build the CasADi OCP with FIXED-SIZE parameterized polytope.
         
-        The polytope is Ax <= b (decomp convention).
+        The polytope is Ax <= b (decomp convention, already transformed to NED).
         For CBF we need: -Ax + b >= 0  (inside = safe)
-        So CBF value = min over vertices j, halfplanes i of: -A[i,:] @ v_j + b[i]
+        So CBF value = min over vertices j, halfplanes i of: b[i] - A[i,:] @ v_j
         """
         rospy.loginfo("Building OCP with fixed-size polytope parameters...")
 
-        # Smooth min function for CBF (numerically stable version)
         n_total = 4 * self.max_halfplanes
         e_sym = ca.MX.sym('e', n_total)
         alpha_sym = ca.MX.sym('alpha')
         
         def smooth_min(e, alpha):
-            # Numerically stable: shift by max to prevent overflow
-            # smooth_min(e) = e_max - (1/alpha) * log(sum(exp(alpha * (e_max - e))))
-            # But since e_max is symbolic, use standard form with clamping
-            # For numerical stability, clamp the exponent
             exp_arg = -alpha * e
-            exp_arg_clamped = ca.fmin(exp_arg, 50)  # Prevent overflow
+            exp_arg_clamped = ca.fmin(exp_arg, 50)
             return -ca.log(ca.sum1(ca.exp(exp_arg_clamped)) + 1e-10) / alpha
         
         lseMin = ca.Function('lseMin', [e_sym, alpha_sym], [smooth_min(e_sym, alpha_sym)])
 
         self.opti = ca.Opti()
 
-        # Decision variables - same structure as original
+        # Decision variables
         self.X = []
         self.U = []
         for k in range(self.N):
@@ -193,8 +198,7 @@ class MPCCBFNode:
         self.X0_param = self.opti.parameter(self.nx)
         self.x_ref_param = self.opti.parameter(3)
 
-        # FIXED-SIZE polytope parameters
-        # A is (max_halfplanes, 2), b is (max_halfplanes,)
+        # FIXED-SIZE polytope parameters (already in NED frame)
         self.A_param = self.opti.parameter(self.max_halfplanes, 2)
         self.b_param = self.opti.parameter(self.max_halfplanes)
 
@@ -229,23 +233,24 @@ class MPCCBFNode:
             self.opti.subject_to(self.opti.bounded(-self.max_force, uk[2], self.max_force))
             self.opti.subject_to(self.opti.bounded(-self.max_force, uk[3], self.max_force))
 
+            # Velocity constraints (optional, can be commented out)
+            self.opti.subject_to(self.opti.bounded(-self.max_surge, xk[3], self.max_surge))  # u
+            self.opti.subject_to(self.opti.bounded(-self.max_sway, xk[4], self.max_sway))  # v
+            # self.opti.subject_to(self.opti.bounded(-self.max_yaw_rate, xk[5], self.max_yaw_rate))  # r
+
             # CBF constraints
             if k < self.N_cbf:
                 # CBF at xk
-                # Decomp convention: A @ x <= b means inside
-                # CBF value h = b - A @ x (positive when inside)
                 vec_xk = []
                 verts_xk = self._robot_vertices_ca(self.X[k][0], self.X[k][1], self.X[k][2])
                 for j in range(4):
                     for i in range(self.max_halfplanes):
-                        # verts_xk[j, :] is (1, 2), A_param[i, :] is (1, 2)
-                        # We need A @ v = sum(A * v)
                         Ai_0 = self.A_param[i, 0]
                         Ai_1 = self.A_param[i, 1]
                         vj_0 = verts_xk[j, 0]
                         vj_1 = verts_xk[j, 1]
                         bi = self.b_param[i]
-                        # h = b - A @ v
+                        # h = b - A @ v (positive when inside Ax <= b)
                         constraint_val = bi - (Ai_0 * vj_0 + Ai_1 * vj_1)
                         vec_xk.append(constraint_val)
 
@@ -274,7 +279,7 @@ class MPCCBFNode:
 
         # Solver options
         opts = {
-            "fatrop.print_level": 0,
+            "fatrop.print_level": 1,
             "print_time": 0,
             "fatrop.max_iter": 100,
             "fatrop.tol": 1e-4,
@@ -287,42 +292,74 @@ class MPCCBFNode:
         rospy.loginfo("OCP built successfully")
 
     def odom_callback(self, msg):
-        """Handle odometry messages."""
+        """
+        Handle odometry messages.
+        Transform from ROS/ENU to MPC/NED frame.
+        """
+        # Position: x stays, y inverts
         self.current_state[0] = msg.pose.pose.position.x
-        self.current_state[1] = -msg.pose.pose.position.y
+        self.current_state[1] = -msg.pose.pose.position.y  # ENU->NED
 
+        # Orientation: yaw inverts
         q = msg.pose.pose.orientation
-        _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-        self.current_state[2] = -yaw
+        _, _, yaw_enu = euler_from_quaternion([q.x, q.y, q.z, q.w])
+        self.current_state[2] = -yaw_enu  # ENU->NED
 
-        self.current_state[3] = msg.twist.twist.linear.x
-        self.current_state[4] = -msg.twist.twist.linear.y
-        self.current_state[5] = -msg.twist.twist.angular.z
+        # Body velocities: u stays, v inverts, r inverts
+        self.current_state[3] = msg.twist.twist.linear.x   # surge (forward)
+        self.current_state[4] = -msg.twist.twist.linear.y  # sway: left->right
+        self.current_state[5] = -msg.twist.twist.angular.z # yaw rate inverts
+        
         self.odom_received = True
 
     def ref_callback(self, msg):
-        """Update reference pose from a PoseStamped message."""
+        """
+        Update reference pose from a PoseStamped message.
+        Transform from ROS/ENU to MPC/NED frame.
+        """
         self.x_ref[0] = msg.pose.position.x
         self.x_ref[1] = msg.pose.position.y
+        
         q = msg.pose.orientation
         _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-        self.x_ref[2] = yaw
+        self.x_ref[2] = yaw 
+        
+        self.ref_received = True
+
+    def rviz_callback(self, msg):
+        """
+        Update reference pose from RVIZ 2D goal (PoseStamped).
+        Transform from ROS/ENU to MPC/NED frame.
+        """
+        self.x_ref[0] = msg.pose.position.x
+        self.x_ref[1] = -msg.pose.position.y  # ENU->NED
+        
+        q = msg.pose.orientation
+        _, _, yaw_enu = euler_from_quaternion([q.x, q.y, q.z, q.w])
+        self.x_ref[2] = -yaw_enu  # ENU->NED
+        
         self.ref_received = True
 
     def poly_callback(self, msg):
         """
         Handle polyhedron messages.
+        Transform from ROS/ENU to MPC/NED frame.
         
         decomp_ros_msgs/Polyhedron has:
-        - normals: Point[] - normal vectors n
-        - points: Point[] - points p0 on each hyperplane
+        - normals: Point[] - normal vectors n (in ENU)
+        - points: Point[] - points p0 on each hyperplane (in ENU)
         
-        The hyperplane equation is: n · (x - p0) <= 0
-        Which means: n · x <= n · p0
-        So: A = n, b = n · p0
+        DecompUtil convention: n · (x - p0) <= 0, i.e., Ax <= b where A=n, b=n·p0
         
-        We fill our fixed-size arrays, padding unused rows with dummy constraints.
-        Dummy: A[i,:] = [0, 0], b[i] = 1000 => always satisfied
+        ENU constraint: n_enu · x_enu <= b_enu
+        
+        For a point x_enu = [x, y], x_ned = [x, -y]
+        Substituting y_enu = -y_ned:
+            n_enu[0] * x + n_enu[1] * y_enu <= b_enu
+            n_enu[0] * x + n_enu[1] * (-y_ned) <= b_enu
+            n_enu[0] * x - n_enu[1] * y_ned <= b_enu
+        
+        So: A_ned = [n_enu[0], -n_enu[1]], b_ned = b_enu (unchanged scalar)
         """
         if len(msg.polyhedrons) == 0:
             rospy.logwarn_throttle(1.0, "Empty polyhedron array received")
@@ -334,14 +371,13 @@ class MPCCBFNode:
         self.A_poly = np.zeros((self.max_halfplanes, 2))
         self.b_poly = np.ones(self.max_halfplanes) * 10.0
 
-        # Count only 2D constraints (ignore z-axis normals)
         idx = 0
         for i in range(len(poly.normals)):
-            nx = poly.normals[i].x
-            ny = poly.normals[i].y
+            nx_enu = poly.normals[i].x
+            ny_enu = poly.normals[i].y
             nz = poly.normals[i].z
             
-            # Skip z-axis constraints (nz != 0 means it's a z constraint)
+            # Skip z-axis constraints
             if abs(nz) > 0.1:
                 continue
                 
@@ -349,18 +385,22 @@ class MPCCBFNode:
                 rospy.logwarn(f"Too many 2D halfplanes, truncating to {self.max_halfplanes}")
                 break
             
-            px = poly.points[i].x
-            py = poly.points[i].y
+            px_enu = poly.points[i].x
+            py_enu = poly.points[i].y
             
-            # A = n, b = n · p0
-            self.A_poly[idx, 0] = nx
-            self.A_poly[idx, 1] = ny
-            self.b_poly[idx] = nx * px + ny * py
+            # Transform normal to NED: A_ned = [n_x, -n_y]
+            self.A_poly[idx, 0] = nx_enu
+            self.A_poly[idx, 1] = -ny_enu
+            
+            # b is a scalar computed in ENU, stays the same
+            # b = n_enu · p0_enu
+            self.b_poly[idx] = nx_enu * px_enu + ny_enu * py_enu
+            
             idx += 1
 
         self.n_active = idx
         self.poly_received = True
-        rospy.loginfo_throttle(1.0, f"Polytope updated: {idx} active 2D halfplanes")
+        # rospy.loginfo_throttle(1.0, f"Polytope updated: {idx} active 2D halfplanes")
 
     def solve_mpc(self):
         """Solve the MPC problem."""
@@ -372,7 +412,7 @@ class MPCCBFNode:
             rospy.logwarn_throttle(1.0, "No reference received yet")
             return None, None
 
-        # Set parameters
+        # Set parameters (all in NED frame)
         self.opti.set_value(self.X0_param, self.current_state)
         self.opti.set_value(self.x_ref_param, self.x_ref)
         self.opti.set_value(self.A_param, self.A_poly)
@@ -411,13 +451,16 @@ class MPCCBFNode:
                 return None, None
 
     def publish_force(self, u):
-        """Publish force command."""
+        """Publish force command (forces are in body frame, no transform needed)."""
         msg = Force()
         msg.data = [float(u[0]), float(u[1]), float(u[2]), float(u[3])]
         self.force_pub.publish(msg)
 
     def publish_trajectory(self, x_opt):
-        """Publish predicted trajectory."""
+        """
+        Publish predicted trajectory.
+        Transform from MPC/NED back to ROS/ENU frame.
+        """
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
         path_msg.header.frame_id = "map"
@@ -425,13 +468,18 @@ class MPCCBFNode:
         for k in range(self.N + 1):
             pose = PoseStamped()
             pose.header = path_msg.header
+            
+            # Transform position: NED->ENU (y inverts back)
             pose.pose.position.x = x_opt[0, k]
-            pose.pose.position.y = -x_opt[1, k]
+            pose.pose.position.y = -x_opt[1, k]  # NED->ENU
             pose.pose.position.z = 0.0
 
-            yaw = -x_opt[2, k]
-            pose.pose.orientation.z = np.sin(yaw / 2)
-            pose.pose.orientation.w = np.cos(yaw / 2)
+            # Transform orientation: NED->ENU (yaw inverts back)
+            yaw_enu = -x_opt[2, k]  # NED->ENU
+            pose.pose.orientation.x = 0.0
+            pose.pose.orientation.y = 0.0
+            pose.pose.orientation.z = np.sin(yaw_enu / 2)
+            pose.pose.orientation.w = np.cos(yaw_enu / 2)
 
             path_msg.poses.append(pose)
 

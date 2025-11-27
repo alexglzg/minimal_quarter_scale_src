@@ -214,3 +214,10 @@ target_link_libraries(simple_decomp_node
   ${DECOMP_UTIL_LIBRARIES}
   )
 add_dependencies(simple_decomp_node ${catkin_EXPORTED_TARGETS})
+
+add_executable(grid_decomp_node src/grid_decomp_node.cpp)
+target_link_libraries(grid_decomp_node 
+  ${catkin_LIBRARIES}
+  ${DECOMP_UTIL_LIBRARIES}
+  )
+add_dependencies(grid_decomp_node ${catkin_EXPORTED_TARGETS})
