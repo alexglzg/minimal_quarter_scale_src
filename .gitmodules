@@ -1,0 +1,6 @@
+[submodule "catkin_simple"]
+	path = catkin_simple
+	url = https://github.com/catkin/catkin_simple.git
+[submodule "DecompROS"]
+	path = DecompROS
+	url = https://github.com/sikang/DecompROS.git
