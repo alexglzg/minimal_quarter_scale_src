@@ -21,19 +21,19 @@
         <param name="Q_x" value="1.0"/>
         <param name="Q_y" value="1.0"/>
         <param name="Q_psi" value="0.0"/>
-        <param name="R_f1" value="0.5"/>
-        <param name="R_f2" value="0.5"/>
-        <param name="R_f3" value="1.0"/>
-        <param name="R_f4" value="1.0"/>
+        <param name="R_f1" value="0.1"/>
+        <param name="R_f2" value="0.1"/>
+        <param name="R_f3" value="0.2"/>
+        <param name="R_f4" value="0.2"/>
                 
         <!-- Boat dynamics (QuarterScale) -->
-        <param name="system_dynamics/m11" value="16.9"/>
-        <param name="system_dynamics/m22" value="30.5"/>
-        <param name="system_dynamics/m33" value="5.77"/>
-        <param name="system_dynamics/d11" value="0.86"/>
-        <param name="system_dynamics/d22" value="15.73"/>
-        <param name="system_dynamics/d33" value="1.78"/>
-        <param name="system_dynamics/aa" value="0.18"/>
-        <param name="system_dynamics/bb" value="0.08"/>
+        <param name="system_dynamics/m11" value="12.0"/>
+        <param name="system_dynamics/m22" value="16.0"/>
+        <param name="system_dynamics/m33" value="3.0"/>
+        <param name="system_dynamics/d11" value="6.0"/>
+        <param name="system_dynamics/d22" value="8.0"/>
+        <param name="system_dynamics/d33" value="0.6"/>
+        <param name="system_dynamics/aa" value="0.45"/>
+        <param name="system_dynamics/bb" value="0.9"/>
     </node>
 </launch>
