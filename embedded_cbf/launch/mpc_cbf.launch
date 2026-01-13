@@ -4,9 +4,9 @@
         <!-- MPC parameters -->
         <param name="horizon" value="41"/>
         <param name="dt" value="0.1"/>
-        <param name="N_cbf" value="40"/>
+        <param name="N_cbf" value="38"/>
         <param name="rate" value="10.0"/>
-        <param name="max_force" value="6.0"/>
+        <param name="max_force" value="4.0"/>
         <param name="gamma" value="0.8"/>
         <param name="max_approx" value="0.005"/>
         
@@ -18,13 +18,16 @@
         <param name="max_halfplanes" value="20"/>
         
         <!-- Cost weights -->
-        <param name="Q_x" value="1.0"/>
-        <param name="Q_y" value="1.0"/>
+        <param name="Q_x" value="10.0"/>
+        <param name="Q_y" value="10.0"/>
         <param name="Q_psi" value="0.0"/>
-        <param name="R_f1" value="0.1"/>
-        <param name="R_f2" value="0.1"/>
-        <param name="R_f3" value="0.2"/>
-        <param name="R_f4" value="0.2"/>
+        <param name="Q_surge" value="5.0"/>
+        <param name="Q_sway" value="10.0"/>
+        <param name="Q_yaw" value="0.0"/>
+        <param name="R_f1" value="2.0"/>
+        <param name="R_f2" value="2.0"/>
+        <param name="R_f3" value="5.0"/>
+        <param name="R_f4" value="5.0"/>
                 
         <!-- Boat dynamics (QuarterScale) -->
         <param name="system_dynamics/m11" value="12.0"/>

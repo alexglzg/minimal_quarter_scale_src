@@ -61,6 +61,11 @@ class MPCCBFNode:
                 rospy.get_param('~R_f3', 0.1),
                 rospy.get_param('~R_f4', 0.1)
             ])
+            self.Q_vel = np.diag([
+                rospy.get_param('~Q_surge', 10.0),
+                rospy.get_param('~Q_sway', 10.0),
+                rospy.get_param('~Q_yaw', 0.0)
+            ])
         else:
             # =====================================================================
             # Parameters
@@ -70,7 +75,7 @@ class MPCCBFNode:
             self.N_cbf = params['N_cbf']
             self.rate = params['rate']
             self.max_force = params['max_force']
-            self.max_surge = 1.0
+            self.max_surge = 0.3
             self.max_sway = 0.1
             self.max_yaw_rate = 1.0
             self.gamma = params['gamma']
@@ -95,9 +100,15 @@ class MPCCBFNode:
                 params['R_f3'],
                 params['R_f4']
             ])
+            self.Q_vel = np.diag([
+                params['Q_surge'],
+                params['Q_sway'],
+                params['Q_yaw']
+            ])
 
         # Reference state (updated via callback)
         self.x_ref = np.array([0.0, 0.0, 0.0])
+        self.x_ref_vel = np.array([self.max_surge, self.max_sway, self.max_yaw_rate])
         self.ref_received = False
 
         if not standalone:
@@ -183,6 +194,13 @@ class MPCCBFNode:
             rospy.loginfo(f"  Frame: ROS/ENU -> MPC/NED (y and psi inverted)")
         else:
             print("MPC-CBF Node initialized")
+
+        # =====================================================================
+        # Logging results
+        # =====================================================================
+        self.comp_times = []
+        self.success = []
+
 
     def _boat_dynamics(self, x, u):
         """QuarterScale boat dynamics in NED frame."""
@@ -282,6 +300,7 @@ class MPCCBFNode:
             uk = self.U[k]
             cost += ca.mtimes([(xk[0:3] - self.x_ref_param).T, self.Q, (xk[0:3] - self.x_ref_param)])
             cost += ca.mtimes([uk.T, self.R, uk])
+            cost += ca.mtimes([(xk[3:] - self.x_ref_vel).T, self.Q_vel, (xk[3:] - self.x_ref_vel)])
 
         cost += ca.mtimes([(self.X[self.N][0:3] - self.x_ref_param).T, self.Q * 10, 
                           (self.X[self.N][0:3] - self.x_ref_param)])
@@ -308,7 +327,7 @@ class MPCCBFNode:
 
             # Velocity constraints (optional, can be commented out)
             # self.opti.subject_to(self.opti.bounded(-self.max_surge, xk[3], self.max_surge))  # u
-            self.opti.subject_to(self.opti.bounded(-self.max_sway, xk[4], self.max_sway))  # v
+            # self.opti.subject_to(self.opti.bounded(-self.max_sway, xk[4], self.max_sway))  # v
             # self.opti.subject_to(self.opti.bounded(-self.max_yaw_rate, xk[5], self.max_yaw_rate))  # r
 
             # CBF constraints
@@ -356,7 +375,7 @@ class MPCCBFNode:
             "print_time": 0,
             "fatrop.max_iter": 100,
             "fatrop.tol": 1e-4,
-            "fatrop.mu_init": 1e-1,
+            "fatrop.mu_init": 1e-1, # Can be further tuned
             "structure_detection": "auto",
             "expand": True,
             "debug": False
