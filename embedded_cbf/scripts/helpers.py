@@ -2,6 +2,29 @@ import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Helper to format any iterable into a comma-separated string [1, 2, 3]
+def fmt(data):
+    """
+    Formats 1D or 2D arrays into a nested list string representation.
+    e.g. [[row1_val1, row1_val2], [row2_val1, row2_val2]]
+    """
+    import numpy as np
+    arr = np.array(data)
+    
+    if arr.ndim == 1:
+        # Returns [1.0, 2.0, 3.0]
+        return "[" + ", ".join(map(str, arr)) + "]"
+    
+    if arr.ndim == 2:
+        # Builds each row as [val, val]
+        rows = []
+        for row in arr:
+            rows.append("[" + ", ".join(map(str, row)) + "]")
+        # Joins rows as [[row1], [row2]]
+        return "[" + ", ".join(rows) + "]"
+    
+    return str(data)
+
 def boat_dynamics(x, u):
     """
     Boat dynamics model for CasADi optimization.

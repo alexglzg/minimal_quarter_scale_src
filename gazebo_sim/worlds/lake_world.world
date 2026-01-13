@@ -19,8 +19,9 @@
       <real_time_update_rate>100</real_time_update_rate>
       <ode>
         <solver>
-          <type>quick</type>
-          <iters>50</iters>
+          <type>quick</type> 
+          <!-- <iters>50</iters> -->
+          <iters>0</iters>
           <sor>0.5</sor>
         </solver>
       </ode>
