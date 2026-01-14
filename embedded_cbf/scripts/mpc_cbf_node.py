@@ -533,8 +533,8 @@ class MPCCBFNode:
                 self.opti.set_initial(self.X[k], x_opt[:, k])
             self.opti.set_initial(self.X[self.N], x_opt[:, self.N])
 
-            self.comp_times = self.comp_times.append(sol.stats()['fatrop']['time_total'])
-            self.success = self.comp_times.append(sol.stats()['fatrop']['success'])
+            self.comp_times.append(sol.stats()['fatrop']['time_total'])
+            self.success.append(sol.stats()['fatrop']['success'])
 
             return u_opt, x_opt
 

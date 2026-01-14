@@ -2,10 +2,11 @@
 
 # 1. Define the Docker execution prefix
 # This is the "First Part" that runs at the start of every terminal
-MY_IP=localhost
-MASTER_IP=localhost
+MY_IP="192.168.0.107"
+MASTER_IP="192.168.0.107"
 
 DOCKER_PREFIX="docker exec -it \
+        --env ROS_IP=$ROS_IP \
         --env ROS_HOSTNAME=$MY_IP \
         --env ROS_MASTER_URI=http://$MASTER_IP:11311 \
         quarterscale"
