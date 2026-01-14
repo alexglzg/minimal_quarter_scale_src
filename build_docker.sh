@@ -1,1 +1,1 @@
-docker build -f Dockerfile_arm64 -t quarterscale . 
+docker build -f Dockerfile_amd64 -t quarterscale . 
