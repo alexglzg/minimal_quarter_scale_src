@@ -300,7 +300,7 @@ class MPCCBFNode:
             uk = self.U[k]
             cost += ca.mtimes([(xk[0:3] - self.x_ref_param).T, self.Q, (xk[0:3] - self.x_ref_param)])
             cost += ca.mtimes([uk.T, self.R, uk])
-            cost += ca.mtimes([(xk[3:] - self.x_ref_vel).T, self.Q_vel, (xk[3:] - self.x_ref_vel)])
+            cost += ca.mtimes([(xk[3:]).T, self.Q_vel, (xk[3:])])
 
         cost += ca.mtimes([(self.X[self.N][0:3] - self.x_ref_param).T, self.Q * 10, 
                           (self.X[self.N][0:3] - self.x_ref_param)])
@@ -533,8 +533,8 @@ class MPCCBFNode:
                 self.opti.set_initial(self.X[k], x_opt[:, k])
             self.opti.set_initial(self.X[self.N], x_opt[:, self.N])
 
-            self.comp_times.append(sol.stats()['fatrop']['time_total'])
-            self.success.append(sol.stats()['fatrop']['success'])
+            # self.comp_times.append(sol.stats()['fatrop']['time_total'])
+            # self.success.append(sol.stats()['fatrop']['success'])
 
             return u_opt, x_opt
 
