@@ -17,7 +17,7 @@ roslaunch gazebo_sim gazebo_roboat.launch
 
 ## Multiple perception systems
 
-roslaunch roboat_planning run_boat
+roslaunch roboat_planning run_boat.launch
 
 - Filters LiDAR data
 - Creates occupancy grid maps
