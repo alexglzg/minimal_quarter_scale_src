@@ -1,0 +1,12 @@
+<launch>
+    <!-- Load path parameters (global for simplicity) -->
+    <rosparam file="$(find control)/config/parameters.yaml" command="load" />
+
+    <!-- Start MPC node (only subscribes to odom for now) -->
+    <node pkg="control"
+          type="mpc_node.py"
+          name="mpc_node"
+          output="screen">
+    </node>
+    
+</launch>

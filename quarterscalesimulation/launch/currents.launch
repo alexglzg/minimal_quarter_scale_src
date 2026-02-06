@@ -6,7 +6,7 @@
     <param name = "beta_current" value = "0.0" />
     <param name = "stddev_cur" value = "1.0" />
     <param name = "mu" value = "0.9" />
-    <param name = "scale_factor" value = "1.0" />
+    <param name = "scale_factor" value = "0.0" />
     </node>
 
 </launch>

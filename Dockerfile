@@ -28,6 +28,12 @@ RUN pip3 install --no-cache-dir \
     matplotlib \
     transforms3d 
 
+RUN apt-get update && apt-get install -y \
+    ros-noetic-serial \
+    ros-noetic-velodyne-description \
+    ros-noetic-velodyne-simulator \
+    libnlopt-dev
+
 # Set up workspace
 RUN mkdir -p /ros1_ws/src
 WORKDIR /ros1_ws
