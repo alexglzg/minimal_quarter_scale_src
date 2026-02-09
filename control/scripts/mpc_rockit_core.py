@@ -4,22 +4,23 @@ import numpy as np
 
 
 class MPCController:
-    def __init__(self, config, path):
-        self.N = config["parameters_mpc"]["N"]
-        self.dt = config["parameters_mpc"]["dt"]
-        self.Tf = config["parameters_mpc"]["Tf"]
-        self.nx = config["parameters_mpc"]["nx"]
-        self.nu = config["parameters_mpc"]["nu"]
+    def __init__(self, parameters_model, 
+                    parameters_mpc, parameters_scenario, path):
+        self.Nhor = parameters_mpc["Nhor"]
+        self.dt = parameters_mpc["dt"]
+        self.Tf = parameters_mpc["Tf"]
+        self.nx = parameters_mpc["nx"]
+        self.nu = parameters_mpc["nu"]
 
-        self.parameters_model = config["parameters_model"]
+        self.parameters_model = parameters_model
 
-        self.num_obs = config["parameters_scenario"]["num_obs"]
+        self.num_obs = parameters_scenario["num_obs"]
 
-        if self.Tf ~= self.N * self.dt:
+        if self.Tf != self.Nhor * self.dt:
             raise ValueError("Tf must be equal to N * dt")
         
         # Define OCP
-        ocp = Ocp(T=Tf)
+        ocp = Ocp(T=self.Tf)
 
         # Define states
         nedx = ocp.state()
@@ -38,14 +39,14 @@ class MPCController:
 
         # Define parameter
         X_0 = ocp.parameter(self.nx)
-        obstacle_x = ocp.parameter(self.num_obs)
-        obstacle_y = ocp.parameter(self.num_obs)
-        obstacle_a = ocp.parameter(self.num_obs)
-        obstacle_b = ocp.parameter(self.num_obs)
-        obstacle_theta = ocp.parameter(self.num_obs)
+        # obstacle_x = ocp.parameter(self.num_obs)
+        # obstacle_y = ocp.parameter(self.num_obs)
+        # obstacle_a = ocp.parameter(self.num_obs)
+        # obstacle_b = ocp.parameter(self.num_obs)
+        # obstacle_theta = ocp.parameter(self.num_obs)
 
-        alpha1 = ocp.parameter()
-        alpha2 = ocp.parameter()
+        # alpha1 = ocp.parameter()
+        # alpha2 = ocp.parameter()
 
         self.path = path
 
@@ -70,10 +71,10 @@ class MPCController:
         ocp.set_der(s, u)
 
         # Lagrange objective
-        Qye = self.config["parameters_mpc"]["Qye"]
-        Qr = self.config["parameters_mpc"]["Qr"]
-        Qpsi = self.config["parameters_mpc"]["Qpsi"]
-        Qu = self.config["parameters_mpc"]["Qu"]
+        Qye = parameters_mpc["Qye"]
+        Qr = parameters_mpc["Qr"]
+        Qpsi = parameters_mpc["Qpsi"]
+        Qu = parameters_mpc["Qu"]
 
         x_d = self.path.x(s)
         y_d = self.path.y(s)
@@ -95,68 +96,76 @@ class MPCController:
         X = vertcat(nedx,nedy,psi,u,v,r,s)
         ocp.subject_to(ocp.at_t0(X)==X_0)
 
-        # Useful for CBF constraints
-        x_dot = (u*cos(psi) - v*sin(psi))
-        y_dot = (u*sin(psi) + v*cos(psi))
-        u_dot = (-d11/m11*u+u1/(m11)+u2/(m11))
-        v_dot = (-d22/m22*v+u3/(m22)+u4/(m22))
-        x_ddot = u_dot*cos(psi) - u*r*sin(psi) - v_dot*sin(psi) - v*r*cos(psi)
-        y_ddot = u_dot*sin(psi) + u*r*cos(psi) + v_dot*cos(psi) - v*r*sin(psi)
+        # # Useful for CBF constraints
+        # x_dot = (u*cos(psi) - v*sin(psi))
+        # y_dot = (u*sin(psi) + v*cos(psi))
+        # u_dot = (-d11/m11*u+u1/(m11)+u2/(m11))
+        # v_dot = (-d22/m22*v+u3/(m22)+u4/(m22))
+        # x_ddot = u_dot*cos(psi) - u*r*sin(psi) - v_dot*sin(psi) - v*r*cos(psi)
+        # y_ddot = u_dot*sin(psi) + u*r*cos(psi) + v_dot*cos(psi) - v*r*sin(psi)
 
-        # CBF constraints for collision avoidance with obstacles
-        for i in range(self.num_obs):
-            x_diff = nedx - obstacle_x[i]
-            y_diff = nedy - obstacle_y[i]
-            bsafe = x_diff*x_diff + y_diff*y_diff - obstacle_a[i]*obstacle_a[i]
-            bsafe_dot = 2*(x_diff*x_dot + y_diff*y_dot)
-            bsafe_ddot = 2*(x_dot*x_dot + x_diff*x_ddot + y_dot*y_dot + y_diff*y_ddot)
-            cbf = bsafe_ddot + (alpha1+alpha2)*bsafe_dot + alpha1*alpha2*bsafe
-            ocp.subject_to(cbf >= 0, include_last=False)
+        # # CBF constraints for collision avoidance with obstacles
+        # for i in range(self.num_obs):
+        #     x_diff = nedx - obstacle_x[i]
+        #     y_diff = nedy - obstacle_y[i]
+        #     bsafe = x_diff*x_diff + y_diff*y_diff - obstacle_a[i]*obstacle_a[i]
+        #     bsafe_dot = 2*(x_diff*x_dot + y_diff*y_dot)
+        #     bsafe_ddot = 2*(x_dot*x_dot + x_diff*x_ddot + y_dot*y_dot + y_diff*y_ddot)
+        #     cbf = bsafe_ddot + (alpha1+alpha2)*bsafe_dot + alpha1*alpha2*bsafe
+        #     ocp.subject_to(cbf >= 0, include_last=False)
 
         # Pick a solution method
         # options = {"ipopt": {"print_level": 0}, "expand": True, "print_time": False}
         options = {
             "expand": True,
             "structure_detection": "auto",
-            "print_time": False,
-            "fatrop.print_level": 0,
+            "print_time": True,
+            "fatrop.print_level": 3,
+            "error_on_fail": True,
         }
         # ocp.solver('ipopt',options)
         ocp.solver('fatrop', options)
 
         # Make it concrete for this ocp
-        ocp.method(MultipleShooting(N=Nhor,M=1,intg='rk'))
+        ocp.method(MultipleShooting(N=self.Nhor,M=1,intg='rk'))
 
         # Get discretisd dynamics as CasADi function
         # Sim_asv_dyn = ocp._method.discrete_system(ocp)
 
         # Set initial value to make sure you can make a function
-        ocp.set_value(X_0, current_X)
-        ocp.set_value(obstacle_x,  zeros(self.num_obs))
-        ocp.set_value(obstacle_y, zeros(self.num_obs))
-        ocp.set_value(obstacle_a, zeros(self.num_obs))
-        ocp.set_value(obstacle_b, zeros(self.num_obs))
-        ocp.set_value(obstacle_theta, zeros(self.num_obs))
-        ocp.set_value(alpha1, 0.0)
-        ocp.set_value(alpha2, 0.0)
+        ocp.set_value(X_0, np.zeros(self.nx))
+        # ocp.set_value(obstacle_x,  np.zeros(self.num_obs))
+        # ocp.set_value(obstacle_y, np.zeros(self.num_obs))
+        # ocp.set_value(obstacle_a, np.zeros(self.num_obs))
+        # ocp.set_value(obstacle_b, np.zeros(self.num_obs))
+        # ocp.set_value(obstacle_theta, np.zeros(self.num_obs))
+        # ocp.set_value(alpha1, 0.0)
+        # ocp.set_value(alpha2, 0.0)
 
         # Make a function
+        # self.ocp_func = ocp.to_function('ocp_func', 
+        #                         [ocp.value(X_0), ocp.value(obstacle_x), 
+        #                         ocp.value(obstacle_y), ocp.value(obstacle_a), 
+        #                         ocp.value(obstacle_b), ocp.value(obstacle_theta),
+        #                         ocp.value(alpha1), ocp.value(alpha2)], 
+        #                         [ ocp.sample(u1,grid='control')[1], 
+        #                         ocp.sample(u2,grid='control')[1], 
+        #                         ocp.sample(u3,grid='control')[1], 
+        #                         ocp.sample(u4,grid='control')[1] ],
+        #                         ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_a', 'obstacle_b', 'obstacle_theta', 'alpha1', 'alpha2'], ['u1', 'u2', 'u3', 'u4'])
+
         self.ocp_func = ocp.to_function('ocp_func', 
-                                [ocp.value(X_0), ocp.value(obstacle_x), 
-                                ocp.value(obstacle_y), ocp.value(obstacle_a), 
-                                ocp.value(obstacle_b), ocp.value(obstacle_theta),
-                                ocp.value(alpha1), ocp.value(alpha2)], 
+                                [ocp.value(X_0)], 
                                 [ ocp.sample(u1,grid='control')[1], 
                                 ocp.sample(u2,grid='control')[1], 
                                 ocp.sample(u3,grid='control')[1], 
                                 ocp.sample(u4,grid='control')[1] ],
-                                ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_a', 'obstacle_b'], ['u1', 'u2', 'u3', 'u4'])
+                                ['X_0'], ['u1', 'u2', 'u3', 'u4'])
 
 
-    def solve(self, current_state, obstacle_x, obstacle_y, obstacle_a, obstacle_b, obstacle_theta, alpha1, alpha2):
-        f1, f2, f3, f4 = self.ocp_func(current_state, 
-                                        obstacle_x, obstacle_y, 
-                                        obstacle_a, obstacle_b, 
-                                        obstacle_theta, alpha1, alpha2)
-        u = np.array([f1, f2, f3, f4])
+    def solve(self, current_state, obstacle_x, obstacle_y, 
+    obstacle_a, obstacle_b, obstacle_theta, alpha1, alpha2):
+        f1, f2, f3, f4 = self.ocp_func(current_state)
+        # print("MPC control outputs:", f1, f2, f3, f4)
+        u = np.array([f1[0], f2[0], f3[0], f4[0]])
         return u

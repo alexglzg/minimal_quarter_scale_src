@@ -26,7 +26,8 @@ RUN pip3 install --no-cache-dir \
     rockit-meco \
     numpy \
     matplotlib \
-    transforms3d 
+    transforms3d \
+    packaging
 
 RUN apt-get update && apt-get install -y \
     ros-noetic-serial \
