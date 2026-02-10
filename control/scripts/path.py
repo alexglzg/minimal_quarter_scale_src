@@ -35,3 +35,23 @@ class SinePath(Path):
 
     def distance_cost(self, s_var, xpos, ypos):
         return super().distance_cost(s_var, xpos, ypos)
+
+class StraightLinePath(Path):
+    def __init__(self, slope=0.0, intercept=0.0):
+        self.slope = slope
+        self.intercept = intercept
+
+    def x(self, s_var):
+        return s_var
+
+    def y(self, s_var):
+        return self.slope * s_var + self.intercept
+
+    def x_dot(self, s_var):
+        return 1.0
+    
+    def y_dot(self, s_var):
+        return self.slope
+
+    def distance_cost(self, s_var, xpos, ypos):
+        return super().distance_cost(s_var, xpos, ypos)

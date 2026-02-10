@@ -86,6 +86,7 @@ class MPCController:
         ocp.add_objective(ocp.sum(Qye*(ye**2) + Qr*(r**2) + Qpsi*(sin(psi)-sin(gamma_p))**2 + Qpsi*(cos(psi)-cos(gamma_p))**2 + Qu*(u-u_ref)**2 + u1**2 + u2**2 + u3**2 + u4**2))
         ocp.add_objective(ocp.at_tf(Qye*(ye**2) + Qr*(r**2) + Qpsi*(sin(psi)-sin(gamma_p))**2 + Qpsi*(cos(psi)-cos(gamma_p))**2 + Qu*(u-u_ref)**2))
 
+
         # Path constraints
         ocp.subject_to( (-max_force_limit <= u1) <= max_force_limit )
         ocp.subject_to( (-max_force_limit <= u2) <= max_force_limit )
@@ -119,8 +120,8 @@ class MPCController:
         options = {
             "expand": True,
             "structure_detection": "auto",
-            "print_time": True,
-            "fatrop.print_level": 3,
+            "print_time": False,
+            "fatrop.print_level": 0,
             "error_on_fail": True,
         }
         # ocp.solver('ipopt',options)
