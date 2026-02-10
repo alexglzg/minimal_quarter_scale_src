@@ -1,0 +1,15 @@
+<launch>
+    <node pkg="kinematic_car" type="kinematic_car_node.py" name="kinematic_car_sim" output="screen">
+        <param name="wheelbase" value="0.1"/>
+        <param name="width"     value="0.06"/>
+        <param name="length"    value="0.15"/>
+        
+        <param name="max_steer" value="0.6"/>
+        <param name="max_accel" value="1.0"/>
+    </node>
+
+    <node pkg="tf" type="static_transform_publisher" name="map_to_odom" 
+          args="0 0 0 0 0 0 map odom 100" />
+
+    <!-- <node type="rviz" name="rviz" pkg="rviz" args="-d $(find kinematic_car)/rviz/config.rviz" /> -->
+</launch>

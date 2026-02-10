@@ -121,7 +121,7 @@ endif()
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES firi_ros
- CATKIN_DEPENDS decomp_ros_msgs geometry_msgs nav_msgs roscpp sensor_msgs decomp_ros_utils
+ CATKIN_DEPENDS decomp_ros_msgs geometry_msgs nav_msgs roscpp sensor_msgs decomp_ros_utils obstacle_detector
 #  DEPENDS system_lib
 )
 
@@ -226,6 +226,15 @@ include_directories(
 # catkin_add_nosetests(test)
 add_executable(firi_node src/firi_node_performance.cpp)
 target_link_libraries(firi_node
+  ${catkin_LIBRARIES}
+  OsqpEigen::OsqpEigen
+  osqp::osqp
+  ${NLOPT_LIBRARIES}
+  ${DECOMP_UTIL_LIBRARIES}
+)
+
+add_executable(firi_polytope_node src/firi_polytope_node.cpp)
+target_link_libraries(firi_polytope_node
   ${catkin_LIBRARIES}
   OsqpEigen::OsqpEigen
   osqp::osqp
