@@ -26,6 +26,7 @@ find_package(catkin REQUIRED COMPONENTS
     roboat_core
     pcl_ros
     pcl_conversions
+
 )
 
 ## System dependencies are found with CMake's conventions
@@ -63,13 +64,11 @@ find_package(PCL REQUIRED QUIET)
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-add_message_files(
-    FILES
-    Polytope2D.msg
-    Polytope2DArray.msg
+# add_message_files(
+#   FILES
 #   Message1.msg
 #   Message2.msg
-)
+# )
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -86,12 +85,11 @@ add_message_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-    DEPENDENCIES
+# generate_messages(
+#    DEPENDENCIES
 #    roboat_core
-    std_msgs
-    geometry_msgs
-)
+# #   std_msgs  # Or other packages containing msgs
+# )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -127,9 +125,6 @@ catkin_package(
 #  LIBRARIES obstacle_detector
    DEPENDS PCL OpenCV
    CATKIN_DEPENDS roboat_core
-   message_runtime
-   std_msgs
-   geometry_msgs
 #  DEPENDS system_lib
 )
 
@@ -284,7 +279,3 @@ target_link_libraries(varyingSweptcapsuleVisualizer
 add_executable(pcl_filter src/pcl_filter.cpp)
 target_link_libraries(pcl_filter ${catkin_LIBRARIES})
 add_dependencies(pcl_filter ${catkin_EXPORTED_TARGETS})
-
-add_executable(polytope_publisher_node src/polytope_publisher_node.cpp)
-# add_dependencies(polytope_publisher_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(polytope_publisher_node ${catkin_LIBRARIES})
