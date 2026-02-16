@@ -259,9 +259,9 @@ public:
         CY = CDt * std::sin(gamma_rw) / ( 1 - ((delta_wind /2) * (1 - (CDl/CDt)) * (std::sin(2*gamma_rw) * std::sin(2*gamma_rw))) );
         CN = -0.18*(gamma_rw - 3.1415/2)*CY;
 
-        X_wind = 0.5*rho*V_rw*V_rw*CX*AFW;
-        Y_wind = 0.5*rho*V_rw*V_rw*CY*ALW;
-        N_wind = 0.5*rho*V_rw*V_rw*CN*AFW*LOA;
+        X_wind = 0.5*rho*V_rw*V_rw*CX*AFW*scale_factor;
+        Y_wind = 0.5*rho*V_rw*V_rw*CY*ALW*scale_factor;
+        N_wind = 0.5*rho*V_rw*V_rw*CN*AFW*LOA*scale_factor;
 
         delta_x = X_wave + X_wind;
         delta_y = Y_wave + Y_wind;

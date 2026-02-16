@@ -10,7 +10,7 @@
     <param name = "stddev_dN" value = "0.05" />
     <param name = "beta_wind" value = "0.0" />
     <param name = "V_wind" value = "2.05" />
-    <param name = "scale_factor" value = "0" />
+    <param name = "scale_factor" value = "1.0" />
     </node>
 
 </launch>
