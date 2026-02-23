@@ -70,6 +70,19 @@ find_package(PCL REQUIRED QUIET)
 #   Message2.msg
 # )
 
+
+add_message_files(
+  FILES
+  Buoy.msg
+  BuoyArray.msg
+)
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  nav_msgs
+)
+
+
 ## Generate services in the 'srv' folder
 # add_service_files(
 #   FILES
@@ -124,7 +137,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES obstacle_detector
    DEPENDS PCL OpenCV
-   CATKIN_DEPENDS roboat_core
+   CATKIN_DEPENDS roboat_core message_runtime std_msgs nav_msgs
 #  DEPENDS system_lib
 )
 

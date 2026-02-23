@@ -2,17 +2,17 @@
   <node pkg="obstacle_detector" type="buoy_simulator.py" name="buoy_sim" output="screen">
     <rosparam param="buoys">
       - name: buoy1
-        radius: 0.5
-        draft: 0.3
-        initial_state: [5.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        radius: 0.8
+        mass: 20.0
+        initial_state: [4.0, 3.2, 0.0, 0.0, 0.0, 0.0]
       - name: buoy2
         radius: 0.8
-        draft: 0.4
-        initial_state: [10.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      - name: buoy3
+        mass: 55.0
+        initial_state: [10.0, 3.2, 0.0, 0.0, 0.0, 0.0]
+      <!-- - name: buoy3
         radius: 0.3
-        draft: 0.2
-        initial_state: [10.0, 2.0, 0.0, 0.0, 0.0, 0.0]
+        mass: 40.0
+        initial_state: [10.0, 2.0, 0.0, 0.0, 0.0, 0.0] -->
     </rosparam>
   </node>
 </launch>

@@ -37,7 +37,7 @@ void Sim::operator()(const state_type &x, state_type &dxdt, const double /* t */
   dxdt[1] = sin(x[2]) * x[3] + cos(x[2]) * x[4];
   dxdt[2] = x[5];
   dxdt[3] = -d11 / m11 * (x[3] - nu_u) + x[6] / m11 + x[7] / m11 - delta_x / m11;
-  dxdt[4] = -d22 / m22 * (x[4] - nu_v) + x[8] / m22 + x[9] / m22 - delta_y / m11;
+  dxdt[4] = -d22 / m22 * (x[4] - nu_v) + x[8] / m22 + x[9] / m22 - delta_y / m22;
   dxdt[5] = -d33 / m33 * x[5] + aa / (2 * m33) * x[6] - aa / (2 * m33) * x[7] + bb / (2 * m33) * x[8] - bb / (2 * m33) * x[9] - delta_theta / m33;
   dxdt[6] = 0;
   dxdt[7] = 0;

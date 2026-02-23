@@ -3,34 +3,25 @@
 import rospy
 import numpy as np
 from nav_msgs.msg import Odometry
+from obstacle_detector.msg import Buoy, BuoyArray
 from geometry_msgs.msg import Pose2D, Quaternion
 from tf.transformations import quaternion_from_euler
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
+from scipy.optimize import fsolve
+
 
 class FreeBuoySimulator:
-    def __init__(self, name, R, h, initial_state):
-        name = name.lower()
+    def __init__(self, name, R, m, initial_state):
+        self.name = name.lower()
         self.R = R # radius of the buoy in meters
-        self.h = h # draft of the buoy in meters (the submerged part)
-        rho = 1000 # Density of water in kg/m^3
+        self.m = m # mass of the buoy in kg
+        self.rho = 1000 # Density of water in kg/m^3        
+        self.Ca = 1.0 # Added mass coefficient
+        self.Cd = 1.1 # Drag coefficient
 
-        V = np.pi * self.R**2 * self.h
-        m = rho * V
+        self.h = self.compute_draft() # draft of the buoy in meters (the submerged part)
 
-        Ca = 1.0 # Added mass coefficient
-        m_added = Ca * m
-
-        self.m11 = m + m_added
-        self.m22 = self.m11
-
-        Iz = 0.5 * m * self.R**2
-        Iz_added = 0.2 * Iz
-        self.m33 = Iz + Iz_added
-
-        Cd = 1.1 # Drag coefficient
-        self.d11 = rho * Cd * self.R * self.h
-        self.d22 = self.d11
-        self.d33 = rho * Cd * self.R**3 * self.h
+        self.M, self.D = self.compute_buoy_model()
 
         # State: [x, y, psi, u, v, r]
         self.state = np.array(initial_state).reshape(6,-1)
@@ -38,7 +29,7 @@ class FreeBuoySimulator:
         # Publisher of the buoy state
         self.odom_pub = rospy.Publisher(f"/{name}/odometry", Odometry, queue_size=10)
         # Publisher of the buoy marker for visualization in Rviz
-        self.marker_pub = rospy.Publisher(f"/{name}/marker", Marker, queue_size=10)
+        # self.marker_pub = rospy.Publisher(f"/{name}/marker", Marker, queue_size=10)
 
         self.marker_id = hash(name) % 1000
         
@@ -83,9 +74,9 @@ class FreeBuoySimulator:
         nedx_dot = np.cos(psi) * u - np.sin(psi) * v
         nedy_dot = np.sin(psi) * u + np.cos(psi) * v
         psi_dot = r
-        u_dot = -self.d11/self.m11 * (u - self.nu_u) - self.delta_x / self.m11
-        v_dot = -self.d22/self.m22 * (v - self.nu_v) - self.delta_y / self.m22
-        r_dot = -self.d33/self.m33 * r - self.delta_theta / self.m33
+        u_dot = -self.D[0,0]/self.M[0,0] * (u - self.nu_u) - self.delta_x / self.M[0,0]
+        v_dot = -self.D[1,1]/self.M[1,1] * (v - self.nu_v) - self.delta_y / self.M[1,1]
+        r_dot = -self.D[2,2]/self.M[2,2] * r - self.delta_theta / self.M[2,2]
 
         # Update state using Euler integration
         self.state += np.array([nedx_dot, nedy_dot, psi_dot, u_dot, v_dot, r_dot]) * dt
@@ -104,8 +95,32 @@ class FreeBuoySimulator:
         odom_msg.twist.twist.angular.z = -self.state[5,0]
         self.odom_pub.publish(odom_msg)
 
-        self.publish_marker()
+        # self.publish_marker()
 
+    def compute_draft(self):
+        """Solve for draft h where buoyant force equals mass."""
+        def draft_eq(h):
+            return (np.pi * h**2 * (3*self.R - h)/3) - (self.m/self.rho) # submerged volume as a function of draft h is a spherical cap, solve for h where submerged volume * water density = mass of the buoy (Archimedes' principle)
+        h_guess = self.R
+        h_solution = fsolve(draft_eq, h_guess)[0]
+        # clip to [0, 2*radius] to avoid unphysical values
+        h_solution = np.clip(h_solution, 0, 2*self.R)
+        rospy.loginfo(f"[{self.name}] radius={self.R:.3f}, mass={self.m:.1f}, draft={h_solution:.3f}")
+        return h_solution
+
+    def compute_buoy_model(self): # buoy model (sphere)
+        V_sub = np.pi * self.h**2 * (3*self.R - self.h)/3 # submerged volume as a function of draft h is a spherical cap
+        m_added = self.Ca * self.rho * V_sub
+        m_total = self.m + m_added
+        I_z = 2/5 * self.m * self.R**2 + 2/5 * m_added * self.R**2
+
+        d11 = self.rho * self.Cd * self.R**2 * self.h
+        d22 = d11
+        d33 = self.rho * self.Cd * self.R**5  # approximate yaw damping
+
+        M = np.diag([m_total, m_total, I_z])
+        D = np.diag([d11, d22, d33])
+        return M, D
 
     def publish_marker(self):
         marker_msg = Marker()
@@ -113,16 +128,20 @@ class FreeBuoySimulator:
         marker_msg.header.frame_id = "map"
         marker_msg.ns = "buoy"
         marker_msg.id = self.marker_id
-        marker_msg.type = Marker.CYLINDER
+        marker_msg.type = Marker.SPHERE
         marker_msg.action = Marker.ADD
+
         marker_msg.pose.position.x = self.state[0,0]
         marker_msg.pose.position.y = -self.state[1,0]
-        marker_msg.pose.position.z = 0.0
-        quat = quaternion_from_euler(0, 0, -self.state[2,0])
-        marker_msg.pose.orientation = Quaternion(*quat)
-        marker_msg.scale.x = self.R * 2 # Diameter of the cylinder
-        marker_msg.scale.y = self.R * 2 # Diameter of the cylinder
-        marker_msg.scale.z = self.h # Height of the cylinder
+        marker_msg.pose.position.z = self.R - self.h # place the center of the sphere at the waterline (z=0), so we need to shift it down by the radius
+        # quat = quaternion_from_euler(0, 0, -self.state[2,0])
+        # marker_msg.pose.orientation = Quaternion(*quat)
+        marker_msg.pose.orientation = Quaternion(0, 0, 0, 1)
+
+        marker_msg.scale.x = self.R * 2 # Diameter of the sphere
+        marker_msg.scale.y = self.R * 2 # Diameter of the sphere
+        marker_msg.scale.z = self.R * 2 # Diameter of the sphere
+
         marker_msg.color.a = 1.0 # Alpha
         marker_msg.color.r = 1.0 # Red
         marker_msg.color.g = 0.5 # Green
@@ -134,15 +153,85 @@ def main():
 
     # Get buoy list from ROS param
     buoys_param = rospy.get_param("~buoys", [
-        {"name": "buoy1", "radius": 0.5, "draft": 0.3, "initial_state": [5.0, 5.0, 0.0, 0.0, 0.0, 0.0]},
-        {"name": "buoy2", "radius": 0.8, "draft": 0.4, "initial_state": [10.0, 10.0, 0.0, 0.0, 0.0, 0.0]}
+        {"name": "buoy1", "radius": 0.5, "mass": 15, "initial_state": [5.0, 5.0, 0.0, 0.0, 0.0, 0.0]},
+        {"name": "buoy2", "radius": 0.8, "mass": 20, "initial_state": [10.0, 10.0, 0.0, 0.0, 0.0, 0.0]}
     ])
 
     buoys = []
     # print(buoys_param)
     for b in buoys_param:
-        buoys.append(FreeBuoySimulator(name=b["name"], R=b["radius"], h=b["draft"], 
+        buoys.append(FreeBuoySimulator(name=b["name"], R=b["radius"], m=b["mass"], 
                                        initial_state=b["initial_state"]))
+        
+    buoy_array_pub = rospy.Publisher("/buoy_array", BuoyArray, queue_size=10)
+    marker_array_pub = rospy.Publisher("/buoy_markers", MarkerArray, queue_size=10)
+    
+    def publish_all_buoys(event):
+        array_msg = BuoyArray()
+        array_msg.buoys = []
+
+        marker_array = MarkerArray()
+        marker_array.markers = []
+
+        for buoy in buoys:
+            # --- ODOM ENTRY ---
+            buoy_msg = Buoy()
+            buoy_msg.radius = buoy.R
+
+            odom_msg = Odometry()
+            odom_msg.header.stamp = rospy.Time.now()
+            odom_msg.header.frame_id = "map"
+
+            odom_msg.pose.pose.position.x = buoy.state[0,0]
+            odom_msg.pose.pose.position.y = -buoy.state[1,0]
+            odom_msg.pose.pose.position.z = 0.0
+
+            quat = quaternion_from_euler(0, 0, -buoy.state[2,0])
+            odom_msg.pose.pose.orientation = Quaternion(*quat)
+
+            odom_msg.twist.twist.linear.x = buoy.state[3,0]
+            odom_msg.twist.twist.linear.y = -buoy.state[4,0]
+            odom_msg.twist.twist.angular.z = -buoy.state[5,0]
+            
+            buoy_msg.odom = odom_msg
+            
+            array_msg.buoys.append(buoy_msg)
+
+            # --- MARKER ENTRY ---
+            marker = Marker()
+            marker.header.stamp = rospy.Time.now()
+            marker.header.frame_id = "map"
+            marker.ns = "buoys"
+            marker.id = buoy.marker_id
+
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+
+            marker.pose.position.x = buoy.state[0,0]
+            marker.pose.position.y = -buoy.state[1,0]
+            marker.pose.position.z = buoy.R - buoy.h
+
+            marker.pose.orientation = Quaternion(0, 0, 0, 1)
+
+            marker.scale.x = buoy.R * 2
+            marker.scale.y = buoy.R * 2
+            marker.scale.z = buoy.R * 2
+
+            marker.color.a = 1.0
+            marker.color.r = 1.0
+            marker.color.g = 0.5
+            marker.color.b = 0.0
+
+            marker_array.markers.append(marker)
+
+        # Publish both arrays
+        buoy_array_pub.publish(array_msg)
+        marker_array_pub.publish(marker_array)
+
+
+    # Timer to publish array at 10 Hz
+    rospy.Timer(rospy.Duration(0.1), publish_all_buoys)
+
 
     rospy.loginfo(f"Spawned {len(buoys)} buoys")
     rospy.spin()

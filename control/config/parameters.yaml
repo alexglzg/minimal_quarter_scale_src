@@ -10,6 +10,7 @@ parameters_model:
   max_force_limit: 6
   u_ref: 0.3
 
+
 parameters_mpc:
   nx: 7                  
   nu: 4                   
@@ -19,24 +20,28 @@ parameters_mpc:
   Qye: 20.0
   Qr: 0.1
   Qpsi: 10.0
-  Qu: 100
+  Qu: 200
+  num_obstacles: 2
+  dummy_x: 1000.0
+  dummy_y: 1000.0
+  dummy_radius: 0.1
 
-parameters_scenario:
-  num_obs: 2
-  obstacle_x: [3.0, 6.0]
-  obstacle_y: [3.2, 3.2]
-  obstacle_theta: [-0.77, 0.77]
-  obstacle_a: [0.8, 0.8]
-  obstacle_b: [0.5, 0.5]
+# parameters_scenario:
+#   num_obs: 2
+#   obstacle_x: [3.0, 6.0]
+#   obstacle_y: [3.2, 3.2]
+#   obstacle_theta: [-0.77, 0.77]
+#   obstacle_a: [0.8, 0.8]
+#   obstacle_b: [0.5, 0.5]
 
-parameters_cbf:
-  alpha1: 1.0
-  alpha2: 1.0
+# parameters_cbf:
+#   alpha1: 1.0
+#   alpha2: 1.0
 
 path:
   type: sine
   x_multiplier: 0.2
-  y_offset: 0.0
+  y_offset: 3.0
   slope: 0.0
   intercept: 0.0
 

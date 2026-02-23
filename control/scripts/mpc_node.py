@@ -9,12 +9,13 @@ from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped
 from tf.transformations import euler_from_quaternion
 from path import SinePath, StraightLinePath
+from obstacle_detector.msg import Buoy, BuoyArray
 
 from scipy.optimize import minimize
 
 class MPCNode:
     def __init__(self):
-        model_p, mpc_p, scenario_p, cbf_p, path_p = self.load_params()
+        model_p, mpc_p, path_p = self.load_params()
 
         if path_p["type"] == "sine":
             self.path = SinePath(path_p["x_multiplier"], path_p["y_offset"])
@@ -23,10 +24,20 @@ class MPCNode:
         else:
             raise ValueError("Unsupported path type")
 
-        self.mpc = MPCController(model_p, mpc_p, scenario_p, self.path)
+        self.mpc = MPCController(model_p, mpc_p, self.path)
 
         self.cmd_pub = rospy.Publisher("/mpc_force", Force, queue_size=1)
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
+
+        # Handling obstacles
+        num_obstacles = mpc_p["num_obstacles"]
+        self.dummy_x = mpc_p["dummy_x"]
+        self.dummy_y = mpc_p["dummy_y"]
+        self.dummy_radius = mpc_p["dummy_radius"]
+        self.obstacle_x = np.ones(num_obstacles)*mpc_p["dummy_x"]
+        self.obstacle_y = np.ones(num_obstacles)*mpc_p["dummy_y"]
+        self.obstacle_radius = np.ones(num_obstacles)*mpc_p["dummy_radius"]
+        rospy.Subscriber("/buoy_array", BuoyArray, self.buoy_array_cb)
 
         self.path_pub = rospy.Publisher(
             "/desired_path",
@@ -35,6 +46,8 @@ class MPCNode:
             latch=True   # important
         )
         self.publish_path()
+        rospy.Timer(rospy.Duration(1.0), lambda _: self.publish_path())
+
         
         # Control loop at 10 Hz
         self.current_state = None
@@ -43,6 +56,35 @@ class MPCNode:
         self.control_loop
         )
 
+
+    def buoy_array_cb(self, msg):
+        obstacles = []
+
+        for b in msg.buoys:
+            # Extract position from Odometry
+            x = b.odom.pose.pose.position.x
+            y = -b.odom.pose.pose.position.y
+
+            # Radius comes from your custom message
+            r = b.radius
+
+            obstacles.append((x, y, r))
+
+        # Sort by distance to current state
+        # if self.current_state is not None:
+        #     obstacles.sort(key=lambda obs: np.hypot(obs[0] - self.current_state[0], obs[1] - self.current_state[1]))
+        # # Take the closest num_obstacles
+        obstacles = obstacles[:self.mpc.num_obs]
+        
+        while len(obstacles) < self.mpc.num_obs:
+                obstacles.append((self.dummy_x, self.dummy_y, self.dummy_radius))
+
+        # Update obstacle parameters for MPC
+        for i, (x, y, r) in enumerate(obstacles):
+            self.obstacle_x[i] = x
+            self.obstacle_y[i] = y
+            self.obstacle_radius[i] = r
+            
         
     def odom_cb(self, msg):
         self.current_state = self.odom_to_state(msg)
@@ -92,8 +134,9 @@ class MPCNode:
         if self.current_state is None:
             return
         print("Current state for MPC:", self.current_state)
-        u = self.mpc.solve(self.current_state, [1000, 1000], [1000, 1000], 
-                               [1.0, 1.0], [1.0, 1.0], [0.0, 0.0], 1.0, 1.0)
+        print("Current obstacles for MPC:", list(zip(self.obstacle_x, self.obstacle_y, self.obstacle_radius)))
+        u = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
+                               self.obstacle_radius, 0.5, 0.5)
         print("Control output from MPC:", u)                              
         self.publish_cmd(u)
 
@@ -105,15 +148,14 @@ class MPCNode:
     def load_params(self):
         model = rospy.get_param("parameters_model")
         mpc = rospy.get_param("parameters_mpc")
-        scenario = rospy.get_param("parameters_scenario")
-        cbf = rospy.get_param("parameters_cbf")
         path = rospy.get_param("path")
 
-        return model, mpc, scenario, cbf, path
+        return model, mpc, path
 
     def publish_path(self):
         path_msg = Path()
         path_msg.header.frame_id = "map"
+        path_msg.header.stamp = rospy.Time.now()
         for s in np.linspace(0, 500, 1000):
             pose = PoseStamped()
             pose.pose.position.x = self.path.x(s)

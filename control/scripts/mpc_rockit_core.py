@@ -5,7 +5,7 @@ import numpy as np
 
 class MPCController:
     def __init__(self, parameters_model, 
-                    parameters_mpc, parameters_scenario, path):
+                    parameters_mpc, path, cbf = False):
         self.Nhor = parameters_mpc["Nhor"]
         self.dt = parameters_mpc["dt"]
         self.Tf = parameters_mpc["Tf"]
@@ -14,7 +14,7 @@ class MPCController:
 
         self.parameters_model = parameters_model
 
-        self.num_obs = parameters_scenario["num_obs"]
+        self.num_obs = parameters_mpc["num_obstacles"]
 
         if self.Tf != self.Nhor * self.dt:
             raise ValueError("Tf must be equal to N * dt")
@@ -39,14 +39,12 @@ class MPCController:
 
         # Define parameter
         X_0 = ocp.parameter(self.nx)
-        # obstacle_x = ocp.parameter(self.num_obs)
-        # obstacle_y = ocp.parameter(self.num_obs)
-        # obstacle_a = ocp.parameter(self.num_obs)
-        # obstacle_b = ocp.parameter(self.num_obs)
-        # obstacle_theta = ocp.parameter(self.num_obs)
+        obstacle_x = ocp.parameter(self.num_obs)
+        obstacle_y = ocp.parameter(self.num_obs)
+        obstacle_radius = ocp.parameter(self.num_obs)
 
-        # alpha1 = ocp.parameter()
-        # alpha2 = ocp.parameter()
+        alpha1 = ocp.parameter()
+        alpha2 = ocp.parameter()
 
         self.path = path
 
@@ -98,22 +96,26 @@ class MPCController:
         ocp.subject_to(ocp.at_t0(X)==X_0)
 
         # # Useful for CBF constraints
-        # x_dot = (u*cos(psi) - v*sin(psi))
-        # y_dot = (u*sin(psi) + v*cos(psi))
-        # u_dot = (-d11/m11*u+u1/(m11)+u2/(m11))
-        # v_dot = (-d22/m22*v+u3/(m22)+u4/(m22))
-        # x_ddot = u_dot*cos(psi) - u*r*sin(psi) - v_dot*sin(psi) - v*r*cos(psi)
-        # y_ddot = u_dot*sin(psi) + u*r*cos(psi) + v_dot*cos(psi) - v*r*sin(psi)
+        x_dot = (u*cos(psi) - v*sin(psi))
+        y_dot = (u*sin(psi) + v*cos(psi))
+        u_dot = (-d11/m11*u+u1/(m11)+u2/(m11))
+        v_dot = (-d22/m22*v+u3/(m22)+u4/(m22))
+        x_ddot = u_dot*cos(psi) - u*r*sin(psi) - v_dot*sin(psi) - v*r*cos(psi)
+        y_ddot = u_dot*sin(psi) + u*r*cos(psi) + v_dot*cos(psi) - v*r*sin(psi)
 
-        # # CBF constraints for collision avoidance with obstacles
-        # for i in range(self.num_obs):
-        #     x_diff = nedx - obstacle_x[i]
-        #     y_diff = nedy - obstacle_y[i]
-        #     bsafe = x_diff*x_diff + y_diff*y_diff - obstacle_a[i]*obstacle_a[i]
-        #     bsafe_dot = 2*(x_diff*x_dot + y_diff*y_dot)
-        #     bsafe_ddot = 2*(x_dot*x_dot + x_diff*x_ddot + y_dot*y_dot + y_diff*y_ddot)
-        #     cbf = bsafe_ddot + (alpha1+alpha2)*bsafe_dot + alpha1*alpha2*bsafe
-        #     ocp.subject_to(cbf >= 0, include_last=False)
+        length_ego = 0.9
+        width_ego = 0.45
+        radius_ego = np.hypot(length_ego, width_ego)/2
+
+        # CBF constraints for collision avoidance with obstacles
+        for i in range(self.num_obs):
+            x_diff = nedx - obstacle_x[i]
+            y_diff = nedy - obstacle_y[i]
+            bsafe = x_diff*x_diff + y_diff*y_diff - (obstacle_radius[i] + radius_ego)**2
+            bsafe_dot = 2*(x_diff*x_dot + y_diff*y_dot)
+            bsafe_ddot = 2*(x_dot*x_dot + x_diff*x_ddot + y_dot*y_dot + y_diff*y_ddot)
+            cbf = bsafe_ddot + (alpha1+alpha2)*bsafe_dot + alpha1*alpha2*bsafe
+            ocp.subject_to(cbf >= 0, include_last=False)
 
         # Pick a solution method
         # options = {"ipopt": {"print_level": 0}, "expand": True, "print_time": False}
@@ -135,38 +137,34 @@ class MPCController:
 
         # Set initial value to make sure you can make a function
         ocp.set_value(X_0, np.zeros(self.nx))
-        # ocp.set_value(obstacle_x,  np.zeros(self.num_obs))
-        # ocp.set_value(obstacle_y, np.zeros(self.num_obs))
-        # ocp.set_value(obstacle_a, np.zeros(self.num_obs))
-        # ocp.set_value(obstacle_b, np.zeros(self.num_obs))
-        # ocp.set_value(obstacle_theta, np.zeros(self.num_obs))
-        # ocp.set_value(alpha1, 0.0)
-        # ocp.set_value(alpha2, 0.0)
+        ocp.set_value(obstacle_x,  np.zeros(self.num_obs))
+        ocp.set_value(obstacle_y, np.zeros(self.num_obs))
+        ocp.set_value(obstacle_radius, np.zeros(self.num_obs))
+        ocp.set_value(alpha1, 0.0)
+        ocp.set_value(alpha2, 0.0)
 
         # Make a function
+
         # self.ocp_func = ocp.to_function('ocp_func', 
-        #                         [ocp.value(X_0), ocp.value(obstacle_x), 
-        #                         ocp.value(obstacle_y), ocp.value(obstacle_a), 
-        #                         ocp.value(obstacle_b), ocp.value(obstacle_theta),
-        #                         ocp.value(alpha1), ocp.value(alpha2)], 
+        #                         [ocp.value(X_0)], 
         #                         [ ocp.sample(u1,grid='control')[1], 
         #                         ocp.sample(u2,grid='control')[1], 
         #                         ocp.sample(u3,grid='control')[1], 
         #                         ocp.sample(u4,grid='control')[1] ],
-        #                         ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_a', 'obstacle_b', 'obstacle_theta', 'alpha1', 'alpha2'], ['u1', 'u2', 'u3', 'u4'])
+        #                         ['X_0'], ['u1', 'u2', 'u3', 'u4'])
+        
 
         self.ocp_func = ocp.to_function('ocp_func', 
-                                [ocp.value(X_0)], 
+                                [ocp.value(X_0), ocp.value(obstacle_x), ocp.value(obstacle_y), ocp.value(obstacle_radius), ocp.value(alpha1), ocp.value(alpha2)], 
                                 [ ocp.sample(u1,grid='control')[1], 
                                 ocp.sample(u2,grid='control')[1], 
                                 ocp.sample(u3,grid='control')[1], 
                                 ocp.sample(u4,grid='control')[1] ],
-                                ['X_0'], ['u1', 'u2', 'u3', 'u4'])
+                                ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_radius', 'alpha1', 'alpha2'], ['u1', 'u2', 'u3', 'u4'])
 
 
-    def solve(self, current_state, obstacle_x, obstacle_y, 
-    obstacle_a, obstacle_b, obstacle_theta, alpha1, alpha2):
-        f1, f2, f3, f4 = self.ocp_func(current_state)
+    def solve(self, current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2):
+        f1, f2, f3, f4 = self.ocp_func(current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2)
         # print("MPC control outputs:", f1, f2, f3, f4)
         u = np.array([f1[0], f2[0], f3[0], f4[0]])
         return u
