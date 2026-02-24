@@ -25,6 +25,8 @@ class MPCNode:
             raise ValueError("Unsupported path type")
 
         self.mpc = MPCController(model_p, mpc_p, self.path)
+        self.initial_guess_state = np.zeros(self.mpc.nx)
+        self.initial_guess_control = np.zeros(self.mpc.nu)
 
         self.cmd_pub = rospy.Publisher("/mpc_force", Force, queue_size=1)
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
@@ -48,7 +50,6 @@ class MPCNode:
         self.publish_path()
         rospy.Timer(rospy.Duration(1.0), lambda _: self.publish_path())
 
-        
         # Control loop at 10 Hz
         self.current_state = None
         self.control_timer = rospy.Timer(
@@ -70,17 +71,23 @@ class MPCNode:
 
             obstacles.append((x, y, r))
 
-        # Sort by distance to current state
-        # if self.current_state is not None:
-        #     obstacles.sort(key=lambda obs: np.hypot(obs[0] - self.current_state[0], obs[1] - self.current_state[1]))
-        # # Take the closest num_obstacles
-        obstacles = obstacles[:self.mpc.num_obs]
+        # Find indices of num_obs closest obstacles
+        if len(obstacles) > 0:
+            distances = [np.hypot(x - self.current_state[0], y - self.current_state[1]) for x, y, r in obstacles]
+            closest_indices = np.argsort(distances)[:self.mpc.num_obs]
         
-        while len(obstacles) < self.mpc.num_obs:
-                obstacles.append((self.dummy_x, self.dummy_y, self.dummy_radius))
+        # select only the closest num_obs obstacles (but keeping the order in the original list to maintain consistency)
+        obstacles_selected = []
+        for i in range(len(obstacles)):
+            if i in closest_indices:
+                obstacles_selected.append(obstacles[i])
+
+        
+        while len(obstacles_selected) < self.mpc.num_obs:
+                obstacles_selected.append((self.dummy_x, self.dummy_y, self.dummy_radius))
 
         # Update obstacle parameters for MPC
-        for i, (x, y, r) in enumerate(obstacles):
+        for i, (x, y, r) in enumerate(obstacles_selected):
             self.obstacle_x[i] = x
             self.obstacle_y[i] = y
             self.obstacle_radius[i] = r
@@ -135,8 +142,11 @@ class MPCNode:
             return
         print("Current state for MPC:", self.current_state)
         print("Current obstacles for MPC:", list(zip(self.obstacle_x, self.obstacle_y, self.obstacle_radius)))
-        u = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
-                               self.obstacle_radius, 0.5, 0.5)
+        u, U, X = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
+                               self.obstacle_radius, 0.5, 0.5, 
+                               self.initial_guess_state, self.initial_guess_control)  
+        self.initial_guess_state = X 
+        self.initial_guess_control = U 
         print("Control output from MPC:", u)                              
         self.publish_cmd(u)
 

@@ -41,7 +41,7 @@ parameters_mpc:
 path:
   type: sine
   x_multiplier: 0.2
-  y_offset: 3.0
+  y_offset: 0.0
   slope: 0.0
   intercept: 0.0
 

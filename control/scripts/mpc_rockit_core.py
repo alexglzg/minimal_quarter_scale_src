@@ -93,6 +93,7 @@ class MPCController:
 
         # Initial state constraint
         X = vertcat(nedx,nedy,psi,u,v,r,s)
+        U = vertcat(u1,u2,u3,u4)
         ocp.subject_to(ocp.at_t0(X)==X_0)
 
         # # Useful for CBF constraints
@@ -155,16 +156,18 @@ class MPCController:
         
 
         self.ocp_func = ocp.to_function('ocp_func', 
-                                [ocp.value(X_0), ocp.value(obstacle_x), ocp.value(obstacle_y), ocp.value(obstacle_radius), ocp.value(alpha1), ocp.value(alpha2)], 
-                                [ ocp.sample(u1,grid='control')[1], 
-                                ocp.sample(u2,grid='control')[1], 
-                                ocp.sample(u3,grid='control')[1], 
-                                ocp.sample(u4,grid='control')[1] ],
-                                ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_radius', 'alpha1', 'alpha2'], ['u1', 'u2', 'u3', 'u4'])
+                                [ocp.value(X_0), ocp.value(obstacle_x), 
+                                ocp.value(obstacle_y), ocp.value(obstacle_radius), 
+                                ocp.value(alpha1), ocp.value(alpha2), 
+                                ocp.sample(X, grid='control')[1], 
+                                ocp.sample(U, grid='control-')[1]], 
+                                [ocp.sample(U, grid='control-')[1], ocp.sample(X, grid='control')[1]],
+                                ['X_0', 'obstacle_x', 'obstacle_y', 'obstacle_radius', 'alpha1', 'alpha2', 'initial_guess_state', 'initial_guess_control'], 
+                                ['U', 'X'])
 
 
-    def solve(self, current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2):
-        f1, f2, f3, f4 = self.ocp_func(current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2)
+    def solve(self, current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2, initial_guess_state, initial_guess_control):
+        U, X = self.ocp_func(current_state, obstacle_x, obstacle_y, obstacle_radius, alpha1, alpha2, initial_guess_state, initial_guess_control)
         # print("MPC control outputs:", f1, f2, f3, f4)
-        u = np.array([f1[0], f2[0], f3[0], f4[0]])
-        return u
+        u = np.array([U[0][0], U[1][0], U[2][0], U[3][0]])
+        return u, U, X
