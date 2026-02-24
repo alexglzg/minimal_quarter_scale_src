@@ -72,16 +72,18 @@ class MPCNode:
             obstacles.append((x, y, r))
 
         # Find indices of num_obs closest obstacles
-        if len(obstacles) > 0:
+        if len(obstacles) > 0 and self.current_state is not None:
             distances = [np.hypot(x - self.current_state[0], y - self.current_state[1]) for x, y, r in obstacles]
             closest_indices = np.argsort(distances)[:self.mpc.num_obs]
         
-        # select only the closest num_obs obstacles (but keeping the order in the original list to maintain consistency)
-        obstacles_selected = []
-        for i in range(len(obstacles)):
-            if i in closest_indices:
-                obstacles_selected.append(obstacles[i])
+            # select only the closest num_obs obstacles (but keeping the order in the original list to maintain consistency)
+            obstacles_selected = []
+            for i in range(len(obstacles)):
+                if i in closest_indices:
+                    obstacles_selected.append(obstacles[i])
 
+        else:
+                obstacles_selected = []
         
         while len(obstacles_selected) < self.mpc.num_obs:
                 obstacles_selected.append((self.dummy_x, self.dummy_y, self.dummy_radius))
@@ -143,7 +145,7 @@ class MPCNode:
         print("Current state for MPC:", self.current_state)
         print("Current obstacles for MPC:", list(zip(self.obstacle_x, self.obstacle_y, self.obstacle_radius)))
         u, U, X = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
-                               self.obstacle_radius, 0.5, 0.5, 
+                               self.obstacle_radius, 0.1*np.ones(self.mpc.num_obs), 0.5*np.ones(self.mpc.num_obs),
                                self.initial_guess_state, self.initial_guess_control)  
         self.initial_guess_state = X 
         self.initial_guess_control = U 

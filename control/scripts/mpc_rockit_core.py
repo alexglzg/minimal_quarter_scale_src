@@ -43,8 +43,8 @@ class MPCController:
         obstacle_y = ocp.parameter(self.num_obs)
         obstacle_radius = ocp.parameter(self.num_obs)
 
-        alpha1 = ocp.parameter()
-        alpha2 = ocp.parameter()
+        alpha1 = ocp.parameter(self.num_obs)
+        alpha2 = ocp.parameter(self.num_obs)
 
         self.path = path
 
@@ -115,7 +115,7 @@ class MPCController:
             bsafe = x_diff*x_diff + y_diff*y_diff - (obstacle_radius[i] + radius_ego)**2
             bsafe_dot = 2*(x_diff*x_dot + y_diff*y_dot)
             bsafe_ddot = 2*(x_dot*x_dot + x_diff*x_ddot + y_dot*y_dot + y_diff*y_ddot)
-            cbf = bsafe_ddot + (alpha1+alpha2)*bsafe_dot + alpha1*alpha2*bsafe
+            cbf = bsafe_ddot + (alpha1[i]+alpha2[i])*bsafe_dot + alpha1[i]*alpha2[i]*bsafe
             ocp.subject_to(cbf >= 0, include_last=False)
 
         # Pick a solution method
@@ -141,8 +141,8 @@ class MPCController:
         ocp.set_value(obstacle_x,  np.zeros(self.num_obs))
         ocp.set_value(obstacle_y, np.zeros(self.num_obs))
         ocp.set_value(obstacle_radius, np.zeros(self.num_obs))
-        ocp.set_value(alpha1, 0.0)
-        ocp.set_value(alpha2, 0.0)
+        ocp.set_value(alpha1, np.zeros(self.num_obs))
+        ocp.set_value(alpha2, np.zeros(self.num_obs))
 
         # Make a function
 

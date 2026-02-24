@@ -7,6 +7,10 @@
     <color rgba="1 0.2 0 1"/>
   </material>
 
+  <material name="footprint_material">
+  <color rgba="0 0.6 1 0.3"/>
+  </material>
+
   <!-- Base Footprint -->
   <link name="base_footprint" />
 
@@ -44,6 +48,24 @@
         izz="4.1"/>
     </inertial>
   </link>
+
+  <!-- ===== Boat Circular Footprint Approximation ===== -->
+  <link name="boat_circle">
+    <visual>
+      <origin xyz=" 0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.466" length="0.01"/>
+      </geometry>
+      <material name="footprint_material"/>
+    </visual>
+  </link>
+
+  <joint name="boat_circle_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="boat_circle"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <!-- ================================================ -->
 
 
   <!-- VLP-16 -->
