@@ -285,7 +285,7 @@ public:
         for(const auto& c : corners) seed.push_back(robot_pos_ + R * c);
 
         // 4. Compute
-        Vector4d bbox(robot_pos_.x()-5, robot_pos_.x()+5, robot_pos_.y()-5, robot_pos_.y()+5);
+        Vector4d bbox(robot_pos_.x()-1, robot_pos_.x()+5, robot_pos_.y()-1, robot_pos_.y()+5);
         auto planes = solver_.compute(obstacles, seed, bbox);
 
         publishPolyhedron(planes, msg->header);
