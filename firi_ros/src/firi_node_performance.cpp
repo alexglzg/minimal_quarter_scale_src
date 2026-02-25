@@ -1,6 +1,5 @@
 #include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/point_cloud_conversion.h>
+#include <sensor_msgs/LaserScan.h>
 #include <nav_msgs/Odometry.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -79,10 +78,6 @@ public:
 
             // 1. RsI Step
             for(const auto& u : O_bar) {
-                // --- FIX: REMOVED DISTANCE CHECK ---
-                // We process ALL voxel-filtered points to ensure we catch nearby walls
-                // even if the initial ellipsoid is tiny.
-                
                 Vector2d b;
                 if(solveRsI(u, Q_bar, b)) {
                     double b_sq = b.squaredNorm();
@@ -212,7 +207,7 @@ private:
 // ==========================================
 class FIRINode {
     ros::NodeHandle nh_;
-    ros::Subscriber sub_odom_, sub_cloud_;
+    ros::Subscriber sub_odom_, sub_scan_;
     ros::Publisher pub_poly_; 
     
     FIRISolver solver_;
@@ -222,7 +217,7 @@ class FIRINode {
 
     double length_ = 0.9; 
     double width_ = 0.45;
-    double voxel_size_ = 0.1; // 10cm by default
+    double voxel_size_ = 0.1;
 
 public:
     FIRINode() : nh_("~") {
@@ -231,10 +226,10 @@ public:
         nh_.param("voxel_size", voxel_size_, 0.1);
 
         sub_odom_ = nh_.subscribe("/odometry/filtered", 1, &FIRINode::odomCb, this);
-        sub_cloud_ = nh_.subscribe("/filtered_cloud", 1, &FIRINode::cloudCb, this);
+        sub_scan_ = nh_.subscribe("/filtered_scan", 1, &FIRINode::scanCb, this);
         pub_poly_ = nh_.advertise<decomp_ros_msgs::PolyhedronArray>("/polyhedron_array", 1, true);
         
-        ROS_INFO("FIRI Node Ready. Robot: %.2f x %.2f, Voxel: %.2f", length_, width_, voxel_size_);
+        ROS_INFO("FIRI Node (LaserScan) Ready. Robot: %.2f x %.2f, Voxel: %.2f", length_, width_, voxel_size_);
     }
 
     void odomCb(const nav_msgs::Odometry::ConstPtr& msg) {
@@ -251,33 +246,38 @@ public:
         odom_rx_ = true;
     }
 
-    void cloudCb(const sensor_msgs::PointCloud2::ConstPtr& msg) {
+    void scanCb(const sensor_msgs::LaserScan::ConstPtr& msg) {
         if(!odom_rx_) return;
 
-        // 1. Convert
-        sensor_msgs::PointCloud cloud;
-        sensor_msgs::convertPointCloud2ToPointCloud(*msg, cloud);
+        // 1. Convert LaserScan to 2D obstacle points in map frame
         std::vector<Vector2d> raw_obs;
-        raw_obs.reserve(cloud.points.size());
-        for(const auto& p : cloud.points) {
-            raw_obs.push_back(Vector2d(p.x, p.y));
+        raw_obs.reserve(msg->ranges.size());
+
+        double angle = msg->angle_min;
+        for(size_t i = 0; i < msg->ranges.size(); ++i, angle += msg->angle_increment) {
+            float r = msg->ranges[i];
+            if(r < msg->range_min || r > msg->range_max || !std::isfinite(r)) continue;
+
+            // Scan angles are in body frame -> rotate to map frame
+            double map_angle = angle + robot_yaw_;
+            double x = robot_pos_.x() + r * cos(map_angle);
+            double y = robot_pos_.y() + r * sin(map_angle);
+            raw_obs.push_back(Vector2d(x, y));
         }
 
-        // 2. Downsample
+        // 2. Downsample (scan already sparse, but voxel filter ensures consistency)
         std::vector<Vector2d> obstacles = voxelFilter(raw_obs, voxel_size_);
 
-        // --- DEBUG PRINT ---
-        // Verify we aren't filtering everything away
-        ROS_INFO_THROTTLE(1.0, "[FIRI] Cloud: %lu -> Voxel: %lu points", 
+        ROS_INFO_THROTTLE(1.0, "[FIRI] Scan rays: %lu -> Obstacles: %lu points", 
             raw_obs.size(), obstacles.size());
 
-        // 3. Seed
-        std::vector<Vector2d> seed;
+        // 3. Seed polygon (robot footprint)
         double hl = length_ / 2.0; 
         double hw = width_ / 2.0;
         Matrix2d R;
         R << cos(robot_yaw_), -sin(robot_yaw_), sin(robot_yaw_),  cos(robot_yaw_);
         
+        std::vector<Vector2d> seed;
         std::vector<Vector2d> corners = {
             Vector2d( hl,  hw), Vector2d( hl, -hw),
             Vector2d(-hl, -hw), Vector2d(-hl,  hw)
@@ -288,7 +288,11 @@ public:
         Vector4d bbox(robot_pos_.x()-1, robot_pos_.x()+5, robot_pos_.y()-1, robot_pos_.y()+5);
         auto planes = solver_.compute(obstacles, seed, bbox);
 
-        publishPolyhedron(planes, msg->header);
+        // 5. Publish
+        std_msgs::Header header;
+        header.stamp = msg->header.stamp;
+        header.frame_id = "map";
+        publishPolyhedron(planes, header);
     }
 
     void publishPolyhedron(const std::vector<std::pair<Vector2d, double>>& planes, const std_msgs::Header& header) {

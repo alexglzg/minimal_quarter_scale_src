@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/LaserScan.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -15,6 +16,7 @@ private:
   ros::NodeHandle nh_;
   ros::Subscriber sub_cloud_;
   ros::Publisher pub_cloud_;
+  ros::Publisher pub_scan_;
   tf::TransformListener tf_listener_;
   
   // Parameters
@@ -23,6 +25,10 @@ private:
   double height_max_;
   double range_min_;
   double range_max_;
+
+  // LaserScan parameters
+  int num_beams_;
+  std::string scan_frame_;
   
 public:
   SimplePCLFilter() : nh_("~") {
@@ -32,19 +38,27 @@ public:
     nh_.param("height_max", height_max_, 2.0);
     nh_.param("range_min", range_min_, 0.1);
     nh_.param("range_max", range_max_, 10.0);
+
+    // LaserScan parameters
+    nh_.param("num_beams", num_beams_, 720);
+    nh_.param<std::string>("scan_frame", scan_frame_, "base_link");
     
     ROS_INFO("PCL Filter Parameters:");
     ROS_INFO("  Voxel size: %.2f", voxel_size_);
     ROS_INFO("  Height range: [%.2f, %.2f]", height_min_, height_max_);
     ROS_INFO("  Range: [%.2f, %.2f]", range_min_, range_max_);
+    ROS_INFO("  LaserScan beams: %d, frame: %s", num_beams_, scan_frame_.c_str());
     
     // Subscribers and Publishers
     sub_cloud_ = nh_.subscribe("/points_raw", 1, &SimplePCLFilter::cloudCallback, this);
     pub_cloud_ = nh_.advertise<sensor_msgs::PointCloud2>("/filtered_cloud", 1);
+    pub_scan_  = nh_.advertise<sensor_msgs::LaserScan>("/filtered_scan", 1);
   }
   
   void cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg) {
-    if (pub_cloud_.getNumSubscribers() == 0) return;
+    bool need_cloud = (pub_cloud_.getNumSubscribers() > 0);
+    bool need_scan  = (pub_scan_.getNumSubscribers() > 0);
+    if (!need_cloud && !need_scan) return;
     
     // Get transform from sensor frame to map
     tf::StampedTransform transform;
@@ -64,7 +78,6 @@ public:
     
     // Transform to map frame
     pcl::PointCloud<PointType>::Ptr cloud_map(new pcl::PointCloud<PointType>());
-    // pcl_ros::transformPointCloud("map", transform, *cloud_in, *cloud_map);
     pcl_ros::transformPointCloud(*cloud_in, *cloud_map, transform);
     
     // Get robot position in map frame
@@ -99,12 +112,69 @@ public:
     voxel_filter.setLeafSize(voxel_size_, voxel_size_, voxel_size_);
     voxel_filter.filter(*cloud_ds);
     
-    // Publish
-    sensor_msgs::PointCloud2 output;
-    pcl::toROSMsg(*cloud_ds, output);
-    output.header.stamp = cloud_msg->header.stamp;
-    output.header.frame_id = "map";
-    pub_cloud_.publish(output);
+    // Publish PointCloud2 (unchanged)
+    if (need_cloud) {
+      sensor_msgs::PointCloud2 output;
+      pcl::toROSMsg(*cloud_ds, output);
+      output.header.stamp = cloud_msg->header.stamp;
+      output.header.frame_id = "map";
+      pub_cloud_.publish(output);
+    }
+
+    // Publish LaserScan
+    if (need_scan) {
+      publishLaserScan(cloud_ds, robot_x, robot_y, transform, cloud_msg->header.stamp);
+    }
+  }
+
+private:
+  void publishLaserScan(const pcl::PointCloud<PointType>::Ptr& cloud,
+                        double robot_x, double robot_y,
+                        const tf::StampedTransform& transform,
+                        const ros::Time& stamp)
+  {
+    // Get robot yaw from transform
+    double roll, pitch, yaw;
+    transform.getBasis().getRPY(roll, pitch, yaw);
+
+    // Build scan message
+    sensor_msgs::LaserScan scan;
+    scan.header.stamp = stamp;
+    scan.header.frame_id = scan_frame_;
+    scan.angle_min = -M_PI;
+    scan.angle_max =  M_PI;
+    scan.angle_increment = 2.0 * M_PI / num_beams_;
+    scan.range_min = range_min_;
+    scan.range_max = range_max_;
+    scan.time_increment = 0.0;
+    scan.scan_time = 0.0;
+    scan.ranges.assign(num_beams_, std::numeric_limits<float>::infinity());
+
+    // Project each point into an angular bin relative to robot pose
+    for (const auto& pt : cloud->points) {
+      double dx = pt.x - robot_x;
+      double dy = pt.y - robot_y;
+      double range = sqrt(dx * dx + dy * dy);
+
+      if (range < range_min_ || range > range_max_) continue;
+
+      // Angle in map frame, then relative to robot heading
+      double angle = atan2(dy, dx) - yaw;
+
+      // Wrap to [-pi, pi)
+      while (angle >= M_PI)  angle -= 2.0 * M_PI;
+      while (angle < -M_PI)  angle += 2.0 * M_PI;
+
+      int idx = static_cast<int>((angle - scan.angle_min) / scan.angle_increment);
+      if (idx < 0 || idx >= num_beams_) continue;
+
+      // Keep closest hit per bin
+      if (range < scan.ranges[idx]) {
+        scan.ranges[idx] = range;
+      }
+    }
+
+    pub_scan_.publish(scan);
   }
 };
 

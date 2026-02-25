@@ -224,11 +224,11 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-add_executable(firi_node src/firi_node_performance.cpp)
+add_executable(firi_node src/firi_node_sdmn.cpp)
 target_link_libraries(firi_node
   ${catkin_LIBRARIES}
-  OsqpEigen::OsqpEigen
-  osqp::osqp
+  # OsqpEigen::OsqpEigen
+  # osqp::osqp
   ${NLOPT_LIBRARIES}
   ${DECOMP_UTIL_LIBRARIES}
 )
