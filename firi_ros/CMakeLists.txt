@@ -233,6 +233,13 @@ target_link_libraries(firi_node
   ${DECOMP_UTIL_LIBRARIES}
 )
 
+add_executable(firi_grid_node src/firi_grid_node.cpp)
+target_link_libraries(firi_grid_node
+  ${catkin_LIBRARIES}
+  ${NLOPT_LIBRARIES}
+  ${DECOMP_UTIL_LIBRARIES}
+)
+
 add_executable(firi_polytope_node src/firi_polytope_node.cpp)
 target_link_libraries(firi_polytope_node
   ${catkin_LIBRARIES}

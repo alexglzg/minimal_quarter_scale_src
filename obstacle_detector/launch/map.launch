@@ -1,4 +1,5 @@
 <launch>
   <!-- Launch map server -->
-  <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_1.yaml" />
+  <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_1.yaml" /> -->
+  <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_2.yaml" />
 </launch>

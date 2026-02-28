@@ -9,8 +9,8 @@ roboat_planning:
 
   # Laser scan params
   _sensorRangeLimitMin: 0.05
-  _sensorRangeLimitMax: 2.0 
-  _sensorHeightLimitUpper: 1.0
+  _sensorRangeLimitMax: 10.0 
+  _sensorHeightLimitUpper: 2.0
   _sensorHeightLimitDown: -0.05
   _sensorCloudTimeout: 0.5
 

@@ -1,0 +1,42 @@
+<launch>
+    <!-- MPC-CBF Node -->
+    <node name="mpc_cbf_path_node" pkg="embedded_cbf" type="mpc_cbf_path_node.py" output="screen">
+        <!-- MPC parameters -->
+        <param name="horizon" value="41"/>
+        <param name="dt" value="0.1"/>
+        <param name="N_cbf" value="38"/>
+        <param name="rate" value="10.0"/>
+        <param name="max_force" value="4.0"/>
+        <param name="gamma" value="0.8"/>
+        <param name="max_approx" value="0.005"/>
+        
+        <!-- Robot dimensions -->
+        <param name="robot_length" value="0.9"/>
+        <param name="robot_width" value="0.45"/>
+        
+        <!-- Maximum halfplanes for polytope constraint -->
+        <param name="max_halfplanes" value="20"/>
+        
+        <!-- Cost weights -->
+        <param name="Q_x" value="2.0"/>
+        <param name="Q_y" value="2.0"/>
+        <param name="Q_psi" value="0.2"/>
+        <param name="Q_surge" value="2.0"/>
+        <param name="Q_sway" value="4.0"/>
+        <param name="Q_yaw" value="0.0"/>
+        <param name="R_f1" value="1.0"/>
+        <param name="R_f2" value="1.0"/>
+        <param name="R_f3" value="2.0"/>
+        <param name="R_f4" value="2.0"/>
+                
+        <!-- Boat dynamics (QuarterScale) -->
+        <param name="system_dynamics/m11" value="12.0"/>
+        <param name="system_dynamics/m22" value="16.0"/>
+        <param name="system_dynamics/m33" value="3.0"/>
+        <param name="system_dynamics/d11" value="6.0"/>
+        <param name="system_dynamics/d22" value="8.0"/>
+        <param name="system_dynamics/d33" value="0.6"/>
+        <param name="system_dynamics/aa" value="0.45"/>
+        <param name="system_dynamics/bb" value="0.9"/>
+    </node>
+</launch>

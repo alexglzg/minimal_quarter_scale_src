@@ -1,24 +1,27 @@
 // ==========================================================================
-// firi_node.cpp — FIRI (Fast Iterative Region Inflation) for 2D
+// firi_grid_node.cpp — FIRI for 2D with OccupancyGrid input
 //
 // Based on: Wang et al., "Fast Iterative Region Inflation for Computing
 //           Large 2-D/3-D Convex Regions of Obstacle-Free Space"
 //           IEEE Transactions on Robotics, Vol. 41, 2025
 //
-// Key components:
-//   1. SDMN  — Seidel's Small-Dimensional Minimum-Norm (replaces OSQP)
-//              Expected O(d) for 2D. [Paper Sec. IV, Algorithm 2]
-//   2. MVIE  — Maximum Volume Inscribed Ellipsoid via log-barrier Newton
-//              [Paper Sec. V, SOCP reformulation concept]
-//   3. FIRI  — Full outer loop: RsI → greedy halfplane select → MVIE → repeat
-//              With convergence criterion. [Paper Sec. III, Algorithm 1]
-//   4. ROS node subscribing to LaserScan + odometry
+// Same FIRI solver as firi_node.cpp (SDMN + MVIE), but subscribes to
+// nav_msgs::OccupancyGrid instead of LaserScan.
+//
+// Key difference from grid_decomp_node.cpp (which uses decomp_util/RILS):
+//   - Boundary extraction: only occupied cells adjacent to free space
+//   - FIRI solver with seed polytope manageability guarantee
+//   - Proper MVIE-based iterative inflation
+//
+// Topics (matching grid_decomp_node):
+//   Subscribed:  /map (OccupancyGrid), /odometry/filtered (Odometry)
+//   Published:   /polyhedron_array (PolyhedronArray)
 //
 // No OSQP dependency. Only requires Eigen, decomp_ros, standard ROS.
 // ==========================================================================
 
 #include <ros/ros.h>
-#include <sensor_msgs/LaserScan.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Odometry.h>
 #include <std_msgs/Header.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -39,7 +42,7 @@
 using namespace Eigen;
 
 // ==========================================================================
-// SPATIAL HASH VOXEL FILTER (unchanged)
+// SPATIAL HASH VOXEL FILTER
 // ==========================================================================
 struct PointHash {
     size_t operator()(const Vector2i& k) const {
@@ -63,14 +66,11 @@ std::vector<Vector2d> voxelFilter(const std::vector<Vector2d>& pts, double res) 
 }
 
 // ==========================================================================
-// SDMN: Small-Dimensional Minimum-Norm (2D specialization)
+// SDMN: Small-Dimensional Minimum-Norm (2D)
 // ==========================================================================
-// Solves:  min ||y||^2   s.t.  e_i^T y <= f_i,  i = 1..d
-//
-// Generalizes Seidel's randomized LP algorithm to minimum-norm QP.
-// For n=2: expected complexity O(2! * d) = O(d), linear in constraints.
-// Replaces OSQP for the RsI halfplane computation.
 // [Paper Section IV, Algorithm 2]
+// Solves:  min ||y||^2   s.t.  e_i^T y <= f_i,  i = 1..d
+// Expected O(d) complexity for n=2.
 
 class SDMN2D {
 public:
@@ -87,36 +87,28 @@ public:
         size_t d = e.size();
         if (d == 0) return {Vector2d::Zero(), true};
 
-        // Random permutation [Paper Sec. IV-B3: ensures expected linear time]
         std::vector<size_t> perm(d);
         std::iota(perm.begin(), perm.end(), 0);
         std::shuffle(perm.begin(), perm.end(), rng_);
 
-        Vector2d y = Vector2d::Zero(); // unconstrained minimum
+        Vector2d y = Vector2d::Zero();
 
         for (size_t ii = 0; ii < d; ++ii) {
             size_t idx = perm[ii];
 
-            // Violation check [Paper Fig. 3(a)→(b): not violated, keep y]
             if (e[idx].dot(y) <= f[idx] + 1e-12) continue;
 
-            // Violated → constraint is active at the optimum
-            // Must solve on the constraint plane: e_h^T y = f_h
-            // [Paper Fig. 3(a)→(c): project to 1D subproblem]
             const Vector2d& eh = e[idx];
             double fh = f[idx];
             double eTe = eh.squaredNorm();
             if (eTe < 1e-15) return {Vector2d::Zero(), false};
 
-            // Minimum-norm point on the constraint plane [Paper Eq. 18]
             Vector2d v = (fh / eTe) * eh;
 
-            // Householder reflection for dimensionality reduction [Paper Eq. 24-26]
-            // Maps v to be parallel to e_j, giving basis for 1D subspace
             int j = (std::abs(v(0)) >= std::abs(v(1))) ? 0 : 1;
             int k = 1 - j;
 
-            Vector2d m_col; // basis vector for constraint plane
+            Vector2d m_col;
             double v_norm = v.norm();
             if (v_norm < 1e-15) {
                 m_col = Vector2d(-eh(1), eh(0));
@@ -130,14 +122,10 @@ public:
                 if (uTu < 1e-15) {
                     m_col = Vector2d(-eh(1), eh(0)).normalized();
                 } else {
-                    // Column k of H^T [Paper: M = H^T without column j]
                     m_col = Vector2d::Unit(k) - (2.0 * u_ref(k) / uTu) * u_ref;
                 }
             }
 
-            // 1D subproblem: min t^2 s.t. a_i*t <= b_i [Paper Eq. 23, then base case]
-            // Transform previous constraints: e_p^T(m*t + v) <= f_p
-            //   => (e_p^T m)*t <= f_p - e_p^T v
             double lo = -1e18, hi = 1e18;
             bool feasible = true;
 
@@ -158,13 +146,12 @@ public:
             if (!feasible || lo > hi + 1e-10)
                 return {Vector2d::Zero(), false};
 
-            // 1D minimum-norm: closest to 0 in [lo, hi] [Paper Alg. 2, Line 4]
             double t;
             if (lo <= 0.0 && 0.0 <= hi) t = 0.0;
             else if (lo > 0.0)           t = lo;
             else                          t = hi;
 
-            y = m_col * t + v; // [Paper Eq. 21]
+            y = m_col * t + v;
         }
 
         return {y, true};
@@ -177,30 +164,22 @@ private:
 // ==========================================================================
 // MVIE: Maximum Volume Inscribed Ellipsoid (2D)
 // ==========================================================================
-// Solves:  max det(L)  s.t.  ||L^T a_i|| + a_i^T d <= b_i,  i=1..m
-//          L lower-triangular with positive diagonal
-//          Ellipsoid = { L*x + d : ||x|| <= 1 }
-//
-// Uses log-barrier interior-point method with Newton steps.
-// 5 decision variables (L11, L21, L22, d1, d2), typically 10-30 constraints.
 // [Paper Section V concept, simplified for 2D]
+// Log-barrier interior-point, 5 decision variables.
 
 class MVIE2D {
 public:
     struct Ellipsoid {
-        Matrix2d L;  // lower triangular
-        Vector2d d;  // center
+        Matrix2d L;
+        Vector2d d;
         double volume() const { return M_PI * std::abs(L(0, 0) * L(1, 1)); }
     };
 
-    // Solve MVIE for polytope {x : A*x <= b}
-    // center_hint should be strictly inside the polytope
     Ellipsoid solve(const MatrixXd& A, const VectorXd& b,
                     const Vector2d& center_hint)
     {
         int m = A.rows();
 
-        // --- Initialization: Chebyshev ball at center_hint ---
         Vector2d c = center_hint;
         double r = 1e18;
         for (int i = 0; i < m; ++i) {
@@ -210,31 +189,26 @@ public:
                 r = std::min(r, gap / norm_ai);
             }
         }
-        if (r <= 0) r = 1e-4; // fallback
-        r *= 0.9; // strictly feasible
+        if (r <= 0) r = 1e-4;
+        r *= 0.9;
         r = std::max(r, 1e-6);
 
-        // State vector: x = [L11, L21, L22, d1, d2]
         VectorXd x(5);
         x << r, 0.0, r, c(0), c(1);
 
-        // --- Log-barrier method ---
-        // Minimize: -t*(log L11 + log L22) + sum_i -log(gap_i)
         double t = 1.0;
         const double mu = 4.0;
 
         for (int outer = 0; outer < 20; ++outer) {
-            // Newton centering steps
             for (int inner = 0; inner < 40; ++inner) {
                 VectorXd grad = gradient(A, b, x, t);
                 MatrixXd H = hessian(A, b, x, t);
-                H += 1e-8 * MatrixXd::Identity(5, 5); // regularize
+                H += 1e-8 * MatrixXd::Identity(5, 5);
 
                 VectorXd dx = H.ldlt().solve(-grad);
                 double lambda_sq = -grad.dot(dx);
-                if (lambda_sq < 1e-6) break; // converged
+                if (lambda_sq < 1e-6) break;
 
-                // Backtracking line search
                 double alpha = 1.0;
                 double f0 = objective(A, b, x, t);
                 for (int ls = 0; ls < 32; ++ls) {
@@ -262,7 +236,6 @@ public:
     }
 
 private:
-    // Barrier objective value
     double objective(const MatrixXd& A, const VectorXd& b,
                      const VectorXd& x, double t)
     {
@@ -280,7 +253,6 @@ private:
         return val;
     }
 
-    // Analytical gradient of barrier objective
     VectorXd gradient(const MatrixXd& A, const VectorXd& b,
                       const VectorXd& x, double t)
     {
@@ -300,18 +272,16 @@ private:
 
             if (nr > 1e-15) {
                 double inr = 1.0 / nr;
-                g(0) += ig * r1 * a1 * inr;    // ∂/∂L11
-                g(1) += ig * r1 * a2 * inr;    // ∂/∂L21
-                g(2) += ig * r2 * a2 * inr;    // ∂/∂L22
+                g(0) += ig * r1 * a1 * inr;
+                g(1) += ig * r1 * a2 * inr;
+                g(2) += ig * r2 * a2 * inr;
             }
-            g(3) += ig * a1;                    // ∂/∂d1
-            g(4) += ig * a2;                    // ∂/∂d2
+            g(3) += ig * a1;
+            g(4) += ig * a2;
         }
         return g;
     }
 
-    // Numerical Hessian via central differences on gradient
-    // 5 variables → 10 gradient evaluations (symmetric), each O(m). Negligible.
     MatrixXd hessian(const MatrixXd& A, const VectorXd& b,
                      const VectorXd& x, double t)
     {
@@ -328,23 +298,15 @@ private:
 };
 
 // ==========================================================================
-// FIRI SOLVER: Full Algorithm
+// FIRI SOLVER
 // ==========================================================================
-// [Paper Algorithm 1]
-//
-// Outer loop:
-//   1. Transform obstacles & seed into normalized space (ellipsoid → unit ball)
-//   2. RsI: for each obstacle, solve SDMN for separating halfplane
-//   3. Greedy halfplane selection (closest first, remove separated obstacles)
-//   4. Transform polytope back to original space
-//   5. Compute MVIE of the polytope
-//   6. Check convergence (MVIE volume improvement < rho)
+// [Paper Algorithm 1] — identical to firi_node.cpp
 
 class FIRISolver {
 public:
     struct HalfPlane {
-        Vector2d normal;  // unit normal
-        double offset;    // n^T x <= offset
+        Vector2d normal;
+        double offset;
     };
 
     struct Result {
@@ -367,17 +329,14 @@ public:
             return {bbox_planes, 0, 0.0};
         }
 
-        // --- Initialize ellipsoid strictly inside seed [Paper Sec. III-B] ---
         Vector2d d = Vector2d::Zero();
         for (const auto& v : seed_vertices) d += v;
         d /= seed_vertices.size();
 
-        // Inscribed ball of seed polygon at centroid
         double r_init = inscribedRadius(seed_vertices, d);
         r_init = std::max(r_init * 0.8, 1e-4);
         Matrix2d L = r_init * Matrix2d::Identity();
 
-        // --- Outer FIRI loop ---
         double prev_vol = r_init * r_init * M_PI;
         std::vector<HalfPlane> best_planes = bbox_planes;
         int iters = 0;
@@ -385,12 +344,9 @@ public:
         for (int k = 0; k < max_iter; ++k) {
             iters = k + 1;
 
-            // --- RsI step [Paper Sec. III-B1, Lines 7-18] ---
             auto planes = runRsI(obstacles, seed_vertices, L, d, bbox_planes);
             best_planes = planes;
 
-            // --- MVIE [Paper Sec. III-B2, Line 21] ---
-            // Build H-representation matrix for MVIE
             int m = planes.size();
             MatrixXd A(m, 2);
             VectorXd b(m);
@@ -403,7 +359,7 @@ public:
 
             double new_vol = mvie.volume();
             if (k > 0 && (new_vol - prev_vol) / (prev_vol + 1e-15) < rho) {
-                break; // Converged [Paper Sec. III-B3, Line 23]
+                break;
             }
             prev_vol = new_vol;
             L = mvie.L;
@@ -422,7 +378,6 @@ private:
 
     // (bbox planes are now constructed by the caller and passed directly)
 
-    // Compute inscribed ball radius of a convex polygon at a given center
     double inscribedRadius(const std::vector<Vector2d>& verts, const Vector2d& c) {
         double r = 1e18;
         int n = verts.size();
@@ -440,9 +395,6 @@ private:
         return r;
     }
 
-    // --- Full RsI step ---
-    // For each obstacle: transform, solve SDMN, get halfplane.
-    // Then greedy selection. Return planes in original space.
     std::vector<HalfPlane> runRsI(
         const std::vector<Vector2d>& obstacles,
         const std::vector<Vector2d>& seed_vertices,
@@ -453,50 +405,38 @@ private:
         Matrix2d L_inv = L.inverse();
         Matrix2d L_inv_T = L_inv.transpose();
 
-        // Transform seed vertices to normalized space [Paper Eq. 5]
         std::vector<Vector2d> seed_bar;
         seed_bar.reserve(seed_vertices.size());
         for (const auto& v : seed_vertices) {
             seed_bar.push_back(L_inv * (v - d));
         }
 
-        // Transform obstacles to normalized space [Paper Eq. 6]
         std::vector<Vector2d> obs_bar;
         obs_bar.reserve(obstacles.size());
         for (const auto& u : obstacles) {
             obs_bar.push_back(L_inv * (u - d));
         }
 
-        // --- Solve SDMN for each obstacle [Paper Alg. 1, Lines 10-11] ---
-        // Constraints for obstacle u_bar:
-        //   Seed containment:    v_bar^T b <= 1   for each seed vertex
-        //   Obstacle exclusion: -u_bar^T b <= -1   (i.e., u_bar^T b >= 1)
-        //
-        // [Paper Eq. 15: min ||b||^2 s.t. v^T b <= 1, u^T b >= 1]
-
         int n_seed = seed_bar.size();
         int n_cons = n_seed + 1;
 
-        // Pre-build seed constraint normals (shared across all obstacle SDMN calls)
         std::vector<Vector2d> base_normals(n_cons);
         std::vector<double> base_bounds(n_cons);
         for (int i = 0; i < n_seed; ++i) {
             base_normals[i] = seed_bar[i];
             base_bounds[i] = 1.0;
         }
-        // Last slot reserved for obstacle (filled per-obstacle)
 
         struct ObsHalfPlane {
-            Vector2d b_sol;    // SDMN solution in transformed space
-            Vector2d a;        // contact point: a = b/||b||^2
-            double a_norm;     // ||a|| = 1/||b|| (smaller = closer = more constraining)
+            Vector2d b_sol;
+            Vector2d a;
+            double a_norm;
             int obs_idx;
         };
         std::vector<ObsHalfPlane> candidates;
         candidates.reserve(obs_bar.size());
 
         for (size_t i = 0; i < obs_bar.size(); ++i) {
-            // Set obstacle constraint: -u^T b <= -1
             base_normals[n_seed] = -obs_bar[i];
             base_bounds[n_seed] = -1.0;
 
@@ -511,8 +451,6 @@ private:
             }
         }
 
-        // --- Greedy halfplane selection [Paper Alg. 1, Lines 12-16] ---
-        // Sort by ||a|| ascending (closest halfplane to unit ball first)
         std::sort(candidates.begin(), candidates.end(),
                   [](const ObsHalfPlane& a, const ObsHalfPlane& b) {
                       return a.a_norm < b.a_norm;
@@ -524,27 +462,21 @@ private:
         for (const auto& hp : candidates) {
             if (separated[hp.obs_idx]) continue;
 
-            // Transform halfplane to original space
-            // Transformed space: a^T x_bar <= ||a||^2
-            // Original space: (L^{-T} a)^T x <= ||a||^2 + (L^{-T} a)^T d
             Vector2d n_orig = L_inv_T * hp.a;
             double d_orig = hp.a.squaredNorm() + n_orig.dot(d);
 
-            // Normalize to unit normal
             double n_len = n_orig.norm();
             if (n_len < 1e-15) continue;
 
             result_planes.push_back({n_orig / n_len, d_orig / n_len});
 
-            // Remove obstacles separated by this halfplane [Paper Alg. 1, Line 16]
-            // Obstacle j is separated if b_selected^T u_bar_j >= 1
             for (size_t j = 0; j < obs_bar.size(); ++j) {
                 if (!separated[j] && hp.b_sol.dot(obs_bar[j]) >= 1.0 - 1e-8) {
                     separated[j] = true;
                 }
             }
 
-            if (result_planes.size() > 50) break; // safety cap
+            if (result_planes.size() > 50) break;
         }
 
         return result_planes;
@@ -552,50 +484,97 @@ private:
 };
 
 // ==========================================================================
-// ROS NODE
+// ROS NODE: OccupancyGrid input
 // ==========================================================================
-class FIRINode {
+// Follows same architecture as grid_decomp_node:
+//   - Cache obstacle points on grid receipt
+//   - Filter to local region each cycle
+//   - Rate-based main loop
+//
+// Improvement over grid_decomp_node:
+//   - Boundary extraction instead of brute-force downsampling
+//   - FIRI solver with robot footprint manageability
+
+class FIRIGridNode {
     ros::NodeHandle nh_;
-    ros::Subscriber sub_odom_, sub_scan_;
-    ros::Publisher pub_poly_;
+    ros::Subscriber grid_sub_, odom_sub_;
+    ros::Publisher poly_pub_;
 
     FIRISolver solver_;
+
+    // Robot state
     Vector2d robot_pos_;
-    double robot_yaw_;
-    bool odom_rx_ = false;
+    double robot_yaw_ = 0.0;
+    bool odom_received_ = false;
+
+    // Cached obstacle data
+    std::vector<Vector2d> all_boundary_obs_;  // boundary-extracted obstacles
+    bool grid_cached_ = false;
+    std::string frame_id_;
 
     // Parameters
-    double length_ = 0.9;
-    double width_ = 0.45;
+    double robot_length_ = 0.9;
+    double robot_width_ = 0.45;
     double voxel_size_ = 0.1;
     int max_firi_iter_ = 10;
     double convergence_rho_ = 0.02;
     double bbox_behind_ = 2.0;
     double bbox_ahead_ = 6.0;
     double bbox_side_ = 4.0;
+    int occupancy_threshold_ = 50;
+    bool use_boundary_extraction_ = true;
 
 public:
-    FIRINode() : nh_("~") {
-        nh_.param("robot_length", length_, 0.9);
-        nh_.param("robot_width", width_, 0.45);
+    FIRIGridNode() : nh_("~") {
+        nh_.param("robot_length", robot_length_, 0.9);
+        nh_.param("robot_width", robot_width_, 0.45);
         nh_.param("voxel_size", voxel_size_, 0.1);
         nh_.param("max_firi_iter", max_firi_iter_, 10);
         nh_.param("convergence_rho", convergence_rho_, 0.02);
-        nh_.param("bbox_behind", bbox_behind_, 1.0);
-        nh_.param("bbox_ahead", bbox_ahead_, 7.0);
+        nh_.param("bbox_behind", bbox_behind_, 2.0);
+        nh_.param("bbox_ahead", bbox_ahead_, 6.0);
         nh_.param("bbox_side", bbox_side_, 3.0);
+        nh_.param("occupancy_threshold", occupancy_threshold_, 50);
+        nh_.param("use_boundary_extraction", use_boundary_extraction_, true);
 
-        sub_odom_ = nh_.subscribe("/odometry/filtered", 1, &FIRINode::odomCb, this);
-        sub_scan_ = nh_.subscribe("/filtered_scan", 1, &FIRINode::scanCb, this);
-        pub_poly_ = nh_.advertise<decomp_ros_msgs::PolyhedronArray>("/polyhedron_array", 1, true);
+        poly_pub_ = nh_.advertise<decomp_ros_msgs::PolyhedronArray>("/polyhedron_array", 1, true);
 
-        ROS_INFO("[FIRI] Ready. Robot: %.2f x %.2f | Voxel: %.2f | MaxIter: %d | Rho: %.3f",
-                 length_, width_, voxel_size_, max_firi_iter_, convergence_rho_);
-        ROS_INFO("[FIRI] BBox: behind=%.1f ahead=%.1f side=%.1f",
-                 bbox_behind_, bbox_ahead_, bbox_side_);
+        grid_sub_ = nh_.subscribe("/map", 1, &FIRIGridNode::gridCallback, this);
+        odom_sub_ = nh_.subscribe("/odometry/filtered", 1, &FIRIGridNode::odomCallback, this);
+
+        ROS_INFO("[FIRI Grid] Robot: %.2f x %.2f | Voxel: %.2f", robot_length_, robot_width_, voxel_size_);
+        ROS_INFO("[FIRI Grid] MaxIter: %d | Rho: %.3f | BBox: behind=%.1f ahead=%.1f side=%.1f",
+                 max_firi_iter_, convergence_rho_, bbox_behind_, bbox_ahead_, bbox_side_);
+        ROS_INFO("[FIRI Grid] Occupancy threshold: %d | Boundary extraction: %s",
+                 occupancy_threshold_, use_boundary_extraction_ ? "ON" : "OFF");
     }
 
-    void odomCb(const nav_msgs::Odometry::ConstPtr& msg) {
+    // ----------------------------------------------------------------
+    // Grid callback: convert to obstacle points and cache
+    // ----------------------------------------------------------------
+    void gridCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
+        frame_id_ = msg->header.frame_id;
+        auto t_start = std::chrono::high_resolution_clock::now();
+
+        if (use_boundary_extraction_) {
+            extractBoundaryObstacles(msg);
+        } else {
+            extractAllObstacles(msg);
+        }
+
+        grid_cached_ = true;
+
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+        ROS_INFO("[FIRI Grid] Grid %dx%d (%.3fm) -> %zu boundary obstacles in %.1f ms",
+                 msg->info.width, msg->info.height, msg->info.resolution,
+                 all_boundary_obs_.size(), ms);
+    }
+
+    // ----------------------------------------------------------------
+    // Odometry callback
+    // ----------------------------------------------------------------
+    void odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
         robot_pos_ << msg->pose.pose.position.x, msg->pose.pose.position.y;
 
         tf2::Quaternion q(
@@ -606,34 +585,38 @@ public:
         tf2::Matrix3x3 m(q);
         double roll, pitch;
         m.getRPY(roll, pitch, robot_yaw_);
-        odom_rx_ = true;
+        odom_received_ = true;
     }
 
-    void scanCb(const sensor_msgs::LaserScan::ConstPtr& msg) {
-        if (!odom_rx_) return;
-
-        // 1. Convert LaserScan → 2D obstacle points in map frame
-        std::vector<Vector2d> raw_obs;
-        raw_obs.reserve(msg->ranges.size());
-        double angle = msg->angle_min;
-        for (size_t i = 0; i < msg->ranges.size(); ++i, angle += msg->angle_increment) {
-            float r = msg->ranges[i];
-            if (r < msg->range_min || r > msg->range_max || !std::isfinite(r)) continue;
-            double map_angle = angle + robot_yaw_;
-            raw_obs.push_back(Vector2d(
-                robot_pos_.x() + r * cos(map_angle),
-                robot_pos_.y() + r * sin(map_angle)));
+    // ----------------------------------------------------------------
+    // Main loop: called at fixed rate
+    // ----------------------------------------------------------------
+    void run() {
+        if (!grid_cached_) {
+            ROS_WARN_THROTTLE(2.0, "[FIRI Grid] Waiting for occupancy grid...");
+            return;
+        }
+        if (!odom_received_) {
+            ROS_WARN_THROTTLE(2.0, "[FIRI Grid] Waiting for odometry...");
+            return;
         }
 
-        // 2. Downsample
-        std::vector<Vector2d> obstacles = voxelFilter(raw_obs, voxel_size_);
+        // 1. Filter cached obstacles to local bounding box
+        std::vector<Vector2d> local_obs = filterLocalObstacles();
 
-        ROS_INFO_THROTTLE(1.0, "[FIRI] Scan rays: %lu -> Obstacles: %lu",
-                          raw_obs.size(), obstacles.size());
+        if (local_obs.empty()) {
+            ROS_WARN_THROTTLE(2.0, "[FIRI Grid] No obstacles in local region");
+            return;
+        }
 
-        // 3. Robot footprint as seed polygon [Paper Eq. 1: seed = conv{v1..vs}]
-        double hl = length_ / 2.0;
-        double hw = width_ / 2.0;
+        // 2. Optional additional voxel filter
+        //    If grid resolution < voxel_size, this reduces point count further.
+        //    If grid resolution >= voxel_size, this is effectively a no-op.
+        local_obs = voxelFilter(local_obs, voxel_size_);
+
+        // 3. Build robot footprint seed
+        double hl = robot_length_ / 2.0;
+        double hw = robot_width_ / 2.0;
         Matrix2d R;
         R << cos(robot_yaw_), -sin(robot_yaw_),
              sin(robot_yaw_),  cos(robot_yaw_);
@@ -646,7 +629,6 @@ public:
         };
 
         // 4. Heading-aligned bounding box as 4 halfplanes (n^T x <= d)
-        //    Constructed in body frame then expressed in map frame
         Vector2d fwd = R.col(0);  // forward unit vector
         Vector2d lft = R.col(1);  // left unit vector
 
@@ -658,33 +640,166 @@ public:
         };
 
         // 5. Run FIRI
-        auto result = solver_.compute(obstacles, seed, bbox_planes, max_firi_iter_, convergence_rho_);
+        auto result = solver_.compute(local_obs, seed, bbox_planes, max_firi_iter_, convergence_rho_);
 
-        ROS_INFO_THROTTLE(1.0, "[FIRI] %d iters, %lu planes, %.2f ms",
-                          result.iterations, result.planes.size(), result.solve_time_ms);
+        ROS_INFO_THROTTLE(1.0, "[FIRI Grid] %zu local obs | %d iters | %lu planes | %.2f ms",
+                          local_obs.size(), result.iterations, result.planes.size(),
+                          result.solve_time_ms);
 
         // 6. Publish
-        std_msgs::Header header;
-        header.stamp = msg->header.stamp;
-        header.frame_id = "map";
-        publishPolyhedron(result.planes, header);
+        publishPolyhedron(result.planes);
     }
 
-    void publishPolyhedron(const std::vector<FIRISolver::HalfPlane>& planes,
-                           const std_msgs::Header& header)
-    {
+private:
+    // ================================================================
+    // BOUNDARY EXTRACTION
+    // ================================================================
+    // Only extract occupied cells that are adjacent to at least one
+    // free cell (4-connected). This gives the obstacle *surface* that
+    // FIRI needs, discarding interior cells that would produce
+    // redundant halfplanes anyway.
+    //
+    // A solid 10-cell-deep wall produces ~2 rows of boundary points
+    // instead of ~10 rows. For typical environments this is a 3-10x
+    // reduction over extracting all occupied cells.
+
+    void extractBoundaryObstacles(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
+        all_boundary_obs_.clear();
+        const auto& info = msg->info;
+        int w = info.width;
+        int h = info.height;
+
+        // Map origin transform
+        tf2::Quaternion q_map(
+            info.origin.orientation.x, info.origin.orientation.y,
+            info.origin.orientation.z, info.origin.orientation.w);
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q_map).getRPY(roll, pitch, yaw);
+        double cos_yaw = cos(yaw);
+        double sin_yaw = sin(yaw);
+        double ox = info.origin.position.x;
+        double oy = info.origin.position.y;
+        double res = info.resolution;
+
+        // 4-connected neighbor offsets
+        const int dx[] = {1, -1, 0, 0};
+        const int dy[] = {0, 0, 1, -1};
+
+        all_boundary_obs_.reserve(w * h / 10); // rough estimate
+
+        for (int row = 0; row < h; ++row) {
+            for (int col = 0; col < w; ++col) {
+                int idx = row * w + col;
+                int8_t val = msg->data[idx];
+
+                // Must be occupied
+                if (val < occupancy_threshold_) continue;
+
+                // Check if any 4-connected neighbor is free
+                bool is_boundary = false;
+                for (int n = 0; n < 4; ++n) {
+                    int nr = row + dy[n];
+                    int nc = col + dx[n];
+
+                    if (nr < 0 || nr >= h || nc < 0 || nc >= w) {
+                        // Edge of map counts as boundary
+                        is_boundary = true;
+                        break;
+                    }
+
+                    int8_t nval = msg->data[nr * w + nc];
+                    if (nval >= 0 && nval < occupancy_threshold_) {
+                        // Neighbor is known-free
+                        is_boundary = true;
+                        break;
+                    }
+                }
+
+                if (!is_boundary) continue;
+
+                // Convert grid cell to world coordinates
+                double x_grid = (col + 0.5) * res;
+                double y_grid = (row + 0.5) * res;
+                double x = ox + x_grid * cos_yaw - y_grid * sin_yaw;
+                double y = oy + x_grid * sin_yaw + y_grid * cos_yaw;
+
+                all_boundary_obs_.push_back(Vector2d(x, y));
+            }
+        }
+    }
+
+    // Fallback: extract all occupied cells (like original grid_decomp_node)
+    void extractAllObstacles(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
+        all_boundary_obs_.clear();
+        const auto& info = msg->info;
+        int w = info.width;
+        int h = info.height;
+
+        tf2::Quaternion q_map(
+            info.origin.orientation.x, info.origin.orientation.y,
+            info.origin.orientation.z, info.origin.orientation.w);
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q_map).getRPY(roll, pitch, yaw);
+        double cos_yaw = cos(yaw);
+        double sin_yaw = sin(yaw);
+        double ox = info.origin.position.x;
+        double oy = info.origin.position.y;
+        double res = info.resolution;
+
+        all_boundary_obs_.reserve(w * h / 4);
+
+        for (int row = 0; row < h; ++row) {
+            for (int col = 0; col < w; ++col) {
+                int idx = row * w + col;
+                if (msg->data[idx] >= occupancy_threshold_) {
+                    double x_grid = (col + 0.5) * res;
+                    double y_grid = (row + 0.5) * res;
+                    double x = ox + x_grid * cos_yaw - y_grid * sin_yaw;
+                    double y = oy + x_grid * sin_yaw + y_grid * cos_yaw;
+                    all_boundary_obs_.push_back(Vector2d(x, y));
+                }
+            }
+        }
+    }
+
+    // ================================================================
+    // LOCAL OBSTACLE FILTERING
+    // ================================================================
+    // Radius filter around robot position, matching grid_decomp_node pattern.
+    // For static maps this is cheap since the full set is cached.
+
+    std::vector<Vector2d> filterLocalObstacles() {
+        double search_radius = std::max({bbox_ahead_, bbox_behind_, bbox_side_}) * 1.2;
+        double search_radius_sq = search_radius * search_radius;
+
+        std::vector<Vector2d> local;
+        local.reserve(all_boundary_obs_.size() / 4);
+
+        for (const auto& obs : all_boundary_obs_) {
+            double dx = obs.x() - robot_pos_.x();
+            double dy = obs.y() - robot_pos_.y();
+            if (dx * dx + dy * dy <= search_radius_sq) {
+                local.push_back(obs);
+            }
+        }
+        return local;
+    }
+
+    // ================================================================
+    // PUBLISHING
+    // ================================================================
+    void publishPolyhedron(const std::vector<FIRISolver::HalfPlane>& planes) {
         Polyhedron2D poly;
         for (const auto& hp : planes) {
-            // Hyperplane2D convention: point on plane + normal
-            // n^T x <= d  →  point = n * d (works for unit normal)
             Vector2d pt = hp.normal * hp.offset;
             poly.add(Hyperplane2D(pt, hp.normal));
         }
         vec_E<Polyhedron2D> polys;
         polys.push_back(poly);
         decomp_ros_msgs::PolyhedronArray poly_msg = DecompROS::polyhedron_array_to_ros(polys);
-        poly_msg.header = header;
-        pub_poly_.publish(poly_msg);
+        poly_msg.header.frame_id = frame_id_;
+        poly_msg.header.stamp = ros::Time::now();
+        poly_pub_.publish(poly_msg);
     }
 };
 
@@ -692,9 +807,18 @@ public:
 // MAIN
 // ==========================================================================
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "firi_node");
-    ROS_INFO("FIRI Node (SDMN + MVIE) starting...");
-    FIRINode node;
-    ros::spin();
+    ros::init(argc, argv, "firi_grid_node");
+    ROS_INFO("FIRI Grid Node (SDMN + MVIE) starting...");
+
+    FIRIGridNode node;
+
+    ros::Rate rate(10); // 10 Hz, matching grid_decomp_node
+
+    while (ros::ok()) {
+        ros::spinOnce();
+        node.run();
+        rate.sleep();
+    }
+
     return 0;
 }

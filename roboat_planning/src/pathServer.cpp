@@ -75,6 +75,26 @@ public:
         ROS_INFO("CDC Test 2, half circle with straight line");
     }
 
+    void intersection_path()
+    {
+        pathRaw = nav_msgs::Path();
+        double R = 2.0;
+        // Straight east segment
+        pathRaw.poses.push_back(createPoseStamped(0, 0, 0));
+        pathRaw.poses.push_back(createPoseStamped(4, 0, 0));
+        // Quarter-circle arc: center (4, R), radius R, from -90deg to 0deg
+        for (double angle = -M_PI/2; angle <= 0; angle += M_PI/18)
+        {
+            float x = 4 + R * cos(angle);
+            float y = R + R * sin(angle);
+            pathRaw.poses.push_back(createPoseStamped(x, -y, 0));
+        }
+        // Straight north segment
+        pathRaw.poses.push_back(createPoseStamped(6, -9, 0));
+        pathSmooth = processPath(pathRaw);
+        ROS_INFO("Intersection path: east then north with arc corner");
+    }
+
     void cdc_3()
     {
     	pathRaw = nav_msgs::Path();
@@ -139,12 +159,12 @@ public:
         // else
         //     return;
 
-        // cdc test 2
-        p.x = 2; p.y = 1; p.z = 0;
+        // intersection test
+        p.x = 0; p.y = 0; p.z = 0;
         if (pointDistance(robotPoint, p) < 1.0)
-            cdc_2();
+            intersection_path();
         else
-           return;
+            return;
 
         // cdc test 3
         //p.x = 1; p.y = 3; p.z = 0;

@@ -38,6 +38,7 @@ public:
         pubSurroundMapCloudDS = nh.advertise<sensor_msgs::PointCloud2>("planning/obstacle/surround_cloud_map_downsample", 1);
 
         pubOccupancyMap  = nh.advertise<nav_msgs::OccupancyGrid> ("planning/obstacle/map", 1);
+        // pubOccupancyMap  = nh.advertise<nav_msgs::OccupancyGrid> ("/map", 1);
         pubOccupancyMap2 = nh.advertise<nav_msgs::OccupancyGrid> ("planning/obstacle/map_inflated", 1);
 
         surroundMapCloud.reset(new pcl::PointCloud<PointType>());

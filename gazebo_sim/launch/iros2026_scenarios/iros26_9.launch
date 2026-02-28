@@ -46,7 +46,7 @@
 
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box5" />
-        <arg name="x" value="6.0" />
+        <arg name="x" value="6.2" />
         <arg name="y" value="-3.9" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
