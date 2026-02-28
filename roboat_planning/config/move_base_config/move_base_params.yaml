@@ -1,0 +1,32 @@
+# We only use move_base for the global planner.
+# The local planner output (cmd_vel) is ignored — our MPC-CBF handles execution.
+
+# Global planner
+base_global_planner: "navfn/NavfnROS"
+
+# Local planner — required by move_base but we ignore its output
+base_local_planner: "base_local_planner/TrajectoryPlannerROS"
+
+# Planner frequency: low is fine, we only need the global plan
+planner_frequency: 1.0
+
+# Disable recovery behaviors — we don't want move_base rotating the robot
+recovery_behavior_enabled: false
+clearing_rotation_allowed: false
+
+# Don't shut down on planner failure
+shutdown_costmaps: false
+
+# Generous tolerances so move_base doesn't interfere
+# (our MPC handles goal reaching, not move_base)
+controller_frequency: 1.0
+controller_patience: 100.0
+planner_patience: 10.0
+
+# NavfnROS specific
+NavfnROS:
+  allow_unknown: false
+  default_tolerance: 0.1
+  visualize_potential: false
+  # Use A* (not Dijkstra)
+  use_dijkstra: false

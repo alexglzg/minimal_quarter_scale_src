@@ -1,0 +1,25 @@
+global_costmap:
+  global_frame: map
+  robot_base_frame: base_link
+  update_frequency: 1.0
+  publish_frequency: 0.5
+  static_map: true
+
+  # Robot footprint: half the width = inscribed circle for A* inflation
+  # Vessel is 0.9 x 0.45m, so radius = 0.225m
+  robot_radius: 0.225
+
+  plugins:
+    - {name: static_layer, type: "costmap_2d::StaticLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+  static_layer:
+    map_topic: /map
+    subscribe_to_updates: true
+
+  inflation_layer:
+    # Inflate by half the vessel width (inscribed radius)
+    inflation_radius: 0.225
+    # Higher value = cost drops off faster from obstacles
+    # Lower value = wider gradient (more conservative paths)
+    cost_scaling_factor: 5.0

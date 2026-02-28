@@ -1,0 +1,20 @@
+# Minimal local costmap — move_base requires one but we ignore it.
+# Our MPC-CBF is the real local planner.
+local_costmap:
+  global_frame: map
+  robot_base_frame: base_link
+  update_frequency: 1.0
+  publish_frequency: 0.5
+  static_map: false
+  rolling_window: true
+  width: 3.0
+  height: 3.0
+  resolution: 0.05
+  robot_radius: 0.225
+
+  plugins:
+    - {name: static_layer, type: "costmap_2d::StaticLayer"}
+
+  static_layer:
+    map_topic: /map
+    subscribe_to_updates: true

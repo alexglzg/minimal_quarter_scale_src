@@ -532,8 +532,8 @@ public:
         nh_.param("max_firi_iter", max_firi_iter_, 10);
         nh_.param("convergence_rho", convergence_rho_, 0.02);
         nh_.param("bbox_behind", bbox_behind_, 2.0);
-        nh_.param("bbox_ahead", bbox_ahead_, 6.0);
-        nh_.param("bbox_side", bbox_side_, 3.0);
+        nh_.param("bbox_ahead", bbox_ahead_, 7.0);
+        nh_.param("bbox_side", bbox_side_, 2.0);
         nh_.param("occupancy_threshold", occupancy_threshold_, 50);
         nh_.param("use_boundary_extraction", use_boundary_extraction_, true);
 

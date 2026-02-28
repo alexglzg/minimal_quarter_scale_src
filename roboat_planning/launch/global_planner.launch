@@ -1,0 +1,32 @@
+<launch>
+    <!--
+    Global planner using move_base + navfn (A*).
+    
+    Assumes:
+      - map_server is already running, publishing /map
+      - TF tree has map -> base_link
+    
+    Usage:
+      Send goals via RViz "2D Nav Goal" or:
+        rostopic pub /move_base_simple/goal geometry_msgs/PoseStamped [...]
+    
+    The global plan is published on /global_plan for the MPC-CBF node.
+    -->
+
+    <arg name="config_dir" default="$(find roboat_planning)/config/move_base_config"/>
+
+    <!-- Move Base (used only for global planning) -->
+    <node pkg="move_base" type="move_base" name="move_base" output="screen">
+        <!-- Load parameters -->
+        <rosparam file="$(arg config_dir)/move_base_params.yaml" command="load"/>
+        <rosparam file="$(arg config_dir)/global_costmap_params.yaml" command="load"/>
+        <rosparam file="$(arg config_dir)/local_costmap_params.yaml" command="load"/>
+
+        <!-- Remap the global plan to /global_plan for the MPC node -->
+        <remap from="/move_base/NavfnROS/plan" to="/global_plan"/>
+
+        <!-- Remap cmd_vel to a dummy topic so it doesn't interfere -->
+        <remap from="cmd_vel" to="/move_base/cmd_vel_unused"/>
+    </node>
+
+</launch>
