@@ -337,36 +337,54 @@ class MPCCBFPathNode:
 
             # CBF constraints
             if k < self.N_cbf:
-                vec_xk = []
+                # Single CBF per point-halfplane constraint
                 verts_xk = self._robot_vertices_ca(self.X[k][0], self.X[k][1], self.X[k][2])
-                for j in range(4):
-                    for i in range(self.max_halfplanes):
-                        Ai_0 = self.A_param[i, 0]
-                        Ai_1 = self.A_param[i, 1]
-                        vj_0 = verts_xk[j, 0]
-                        vj_1 = verts_xk[j, 1]
-                        bi = self.b_param[i]
-                        constraint_val = bi - (Ai_0 * vj_0 + Ai_1 * vj_1)
-                        vec_xk.append(constraint_val)
-
-                alpha = ca.log(n_total) / self.max_approx
-                cbf_xk = lseMin(ca.vertcat(*vec_xk), alpha)
-
-                vec_xk1 = []
                 verts_xk1 = self._robot_vertices_ca(x_next_model[0], x_next_model[1], x_next_model[2])
                 for j in range(4):
                     for i in range(self.max_halfplanes):
                         Ai_0 = self.A_param[i, 0]
                         Ai_1 = self.A_param[i, 1]
-                        vj_0 = verts_xk1[j, 0]
-                        vj_1 = verts_xk1[j, 1]
+                        vj_0_k = verts_xk[j, 0]
+                        vj_1_k = verts_xk[j, 1]
+                        vj_0_k1 = verts_xk1[j, 0]
+                        vj_1_k1 = verts_xk1[j, 1]
                         bi = self.b_param[i]
-                        constraint_val = bi - (Ai_0 * vj_0 + Ai_1 * vj_1)
-                        vec_xk1.append(constraint_val)
+                        dist_xk = bi - (Ai_0 * vj_0_k + Ai_1 * vj_1_k)
+                        dist_xk1 = bi - (Ai_0 * vj_0_k1 + Ai_1 * vj_1_k1)
+                        self.opti.subject_to(dist_xk1 >= self.gamma*dist_xk)
 
-                cbf_xk1 = lseMin(ca.vertcat(*vec_xk1), alpha)
+                # # LSE approximation of CBF
 
-                self.opti.subject_to(cbf_xk1 >= self.gamma * cbf_xk + (1 - self.gamma) * self.max_approx)
+                # vec_xk = []
+                # verts_xk = self._robot_vertices_ca(self.X[k][0], self.X[k][1], self.X[k][2])
+                # for j in range(4):
+                #     for i in range(self.max_halfplanes):
+                #         Ai_0 = self.A_param[i, 0]
+                #         Ai_1 = self.A_param[i, 1]
+                #         vj_0 = verts_xk[j, 0]
+                #         vj_1 = verts_xk[j, 1]
+                #         bi = self.b_param[i]
+                #         constraint_val = bi - (Ai_0 * vj_0 + Ai_1 * vj_1)
+                #         vec_xk.append(constraint_val)
+
+                # alpha = ca.log(n_total) / self.max_approx
+                # cbf_xk = lseMin(ca.vertcat(*vec_xk), alpha)
+
+                # vec_xk1 = []
+                # verts_xk1 = self._robot_vertices_ca(x_next_model[0], x_next_model[1], x_next_model[2])
+                # for j in range(4):
+                #     for i in range(self.max_halfplanes):
+                #         Ai_0 = self.A_param[i, 0]
+                #         Ai_1 = self.A_param[i, 1]
+                #         vj_0 = verts_xk1[j, 0]
+                #         vj_1 = verts_xk1[j, 1]
+                #         bi = self.b_param[i]
+                #         constraint_val = bi - (Ai_0 * vj_0 + Ai_1 * vj_1)
+                #         vec_xk1.append(constraint_val)
+
+                # cbf_xk1 = lseMin(ca.vertcat(*vec_xk1), alpha)
+
+                # self.opti.subject_to(cbf_xk1 >= self.gamma * cbf_xk + (1 - self.gamma) * self.max_approx)
 
         self.opti.minimize(cost)
 
