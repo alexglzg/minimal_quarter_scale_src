@@ -2,9 +2,9 @@
     <!-- MPC-CBF Node -->
     <node name="mpc_cbf_node" pkg="embedded_cbf" type="mpc_cbf_node.py" output="screen">
         <!-- MPC parameters -->
-        <param name="horizon" value="41"/>
+        <param name="horizon" value="31"/>
         <param name="dt" value="0.1"/>
-        <param name="N_cbf" value="38"/>
+        <param name="N_cbf" value="28"/>
         <param name="rate" value="10.0"/>
         <param name="max_force" value="4.0"/>
         <param name="gamma" value="0.8"/>

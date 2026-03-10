@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y \
     ros-noetic-velodyne-simulator \
     libnlopt-dev
 
+RUN apt-get install -y python3-tk
 
 # Set up workspace
 RUN mkdir -p /ros1_ws/src
@@ -48,5 +49,6 @@ WORKDIR /ros1_ws
 # Source ROS setup in bashrc
 RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
 RUN echo "source /ros1_ws/devel/setup.bash" >> ~/.bashrc
+RUN echo "export PYTHONPATH=${PYTHONPATH}:/ros1_ws/src" >> ~/.bashrc
 
 CMD ["bash"]

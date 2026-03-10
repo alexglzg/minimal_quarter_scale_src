@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   roscpp
   sensor_msgs
+  obstacle_detector
 )
 
 ## System dependencies are found with CMake's conventions
@@ -23,6 +24,7 @@ find_package(OsqpEigen REQUIRED)
 find_package(osqp REQUIRED)
 
 find_package(decomp_util REQUIRED)
+find_package(obstacle_detector REQUIRED)
 
 
 # 3. Find NLopt (Robust Method: Direct Library Search)
@@ -248,3 +250,4 @@ target_link_libraries(firi_polytope_node
   ${NLOPT_LIBRARIES}
   ${DECOMP_UTIL_LIBRARIES}
 )
+add_dependencies(firi_polytope_node obstacle_detector_generate_messages_cpp)
