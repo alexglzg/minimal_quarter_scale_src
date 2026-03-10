@@ -314,7 +314,7 @@ Visualization Manager:
       Radius: 0.029999999329447746
       Shaft Diameter: 0.10000000149011612
       Shaft Length: 0.10000000149011612
-      Topic: /move_base/TrajectoryPlannerROS/global_plan
+      Topic: /global_plan
       Unreliable: false
       Value: true
   Enabled: true
@@ -345,7 +345,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 29.367773056030273
+      Distance: 20.39167022705078
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -353,9 +353,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 4.543120384216309
-        Y: -4.602850914001465
-        Z: 0.05578591674566269
+        X: 0.8368008136749268
+        Y: 0.04549361392855644
+        Z: 0.05205085501074791
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
