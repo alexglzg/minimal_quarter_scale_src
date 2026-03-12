@@ -5,7 +5,7 @@ import numpy as np
 from nav_msgs.msg import Odometry
 from obstacle_detector.msg import Buoy, BuoyArray
 from geometry_msgs.msg import Pose2D, Quaternion
-from tf.transformations import quaternion_from_euler
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from visualization_msgs.msg import Marker, MarkerArray
 from scipy.optimize import fsolve
 
@@ -37,14 +37,65 @@ class FreeBuoySimulator:
         rospy.Subscriber("/roboat_disturbance", Pose2D, self.disturbance_callback)
         rospy.Subscriber("/roboat_currents", Pose2D, self.current_callback)
 
+        # Subscriber to odometry of the vessel to model interaction
+        # rospy.Subscriber("odometry/filtered", Odometry, self.vessel_odometry_callback)
+
         self.nu_u = 0.0
         self.nu_v = 0.0
         self.delta_x = 0.0
         self.delta_y = 0.0
         self.delta_theta = 0.0
+        self.F_body = np.array([0.0, 0.0])
 
         self.t0 = rospy.get_time()
         rospy.Timer(rospy.Duration(0.01), self.update)
+
+    def vessel_odometry_callback(self, msg):
+
+        sigma = 3.0
+        sigma_r = 2.0
+        k = 0.1
+        kr = 0.25
+        kd = 3.0
+
+        x_vessel = msg.pose.pose.position.x
+        y_vessel = -msg.pose.pose.position.y
+        quat = msg.pose.pose.orientation
+        psi_vessel = -euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])[2]
+        u_vessel = msg.twist.twist.linear.x
+        v_vessel = -msg.twist.twist.linear.y
+        V_vessel = np.sqrt(u_vessel**2 + v_vessel**2)
+
+        dx = self.state[0,0] - x_vessel
+        dy = self.state[1,0] - y_vessel
+        d = np.sqrt(dx**2 + dy**2) + 1e-6 # distance between vessel and buoy, add small term to avoid division by zero
+        e = np.array([np.cos(psi_vessel), np.sin(psi_vessel)]).flatten() # heading vector vessel
+        
+        # forward disturbance from vessel wake, modeled as a Gaussian centered at the vessel and aligned with the vessel heading
+        u_forward = k * V_vessel * np.exp(-d**2/(2*sigma**2)) * e
+
+        # sideways disturbance pushing water away from the vessel, modeled as a Gaussian centered at the vessel and pointing radially outward
+        u_side = kr * np.exp(-d**2/(2*sigma_r**2)) * np.array([dx, dy]).flatten() / d
+
+        # total water velocity disturbance at the buoy due to the vessel wake
+        u_total =-u_side
+
+        v_b_ned = np.array([
+            np.cos(self.state[2,0])*self.state[3,0] - np.sin(self.state[2,0])*self.state[4,0],
+            np.sin(self.state[2,0])*self.state[3,0] + np.cos(self.state[2,0])*self.state[4,0]
+        ])
+
+        rel = u_total - v_b_ned
+        
+        F = kd * rel
+
+        R = np.array([
+            [np.cos(self.state[2,0]), np.sin(self.state[2,0])],
+            [-np.sin(self.state[2,0]), np.cos(self.state[2,0])]
+        ])
+
+        self.F_body = R @ F
+
 
     def disturbance_callback(self, msg):
         self.delta_x = msg.x # North disturbance in Newtons
@@ -74,8 +125,8 @@ class FreeBuoySimulator:
         nedx_dot = np.cos(psi) * u - np.sin(psi) * v
         nedy_dot = np.sin(psi) * u + np.cos(psi) * v
         psi_dot = r
-        u_dot = -self.D[0,0]/self.M[0,0] * (u - self.nu_u) - self.delta_x / self.M[0,0]
-        v_dot = -self.D[1,1]/self.M[1,1] * (v - self.nu_v) - self.delta_y / self.M[1,1]
+        u_dot = -self.D[0,0]/self.M[0,0] * (u - self.nu_u) - (self.delta_x + self.F_body[0]) / self.M[0,0]
+        v_dot = -self.D[1,1]/self.M[1,1] * (v - self.nu_v) - (self.delta_y + self.F_body[1]) / self.M[1,1]
         r_dot = -self.D[2,2]/self.M[2,2] * r - self.delta_theta / self.M[2,2]
 
         # Update state using Euler integration
@@ -223,6 +274,33 @@ def main():
             marker.color.b = 0.0
 
             marker_array.markers.append(marker)
+
+            # --- FORCE ENTRY ---
+            force_marker = Marker()
+            force_marker.header.stamp = rospy.Time.now()
+            force_marker.header.frame_id = "map"
+            force_marker.ns = "buoy_forces"
+            force_marker.id = buoy.marker_id
+            force_marker.type = Marker.ARROW
+            force_marker.action = Marker.ADD
+            force_marker.pose.position.x = buoy.state[0,0]
+            force_marker.pose.position.y = -buoy.state[1,0]
+            force_marker.pose.position.z = 1.5 # place the force arrow above the buoy for better visibility
+            force_marker.pose.orientation = Quaternion(0, 0, 0, 1)
+            force_marker.scale.x = 0.1 # shaft diameter
+            force_marker.scale.y = 0.2 # head diameter
+            force_marker.scale.z = 0.2 # head length
+            force_marker.color.a = 1.0
+            force_marker.color.r = 0.0
+            force_marker.color.g = 0.0
+            force_marker.color.b = 1.0
+            # Set the arrow direction and length based on the force
+            F_total = np.sqrt(buoy.F_body[0]**2 + buoy.F_body[1]**2) + 1e-6 # total force magnitude, add small term to avoid division by zero
+            force_marker.scale.x = 0.1 + 0.5 * F_total # scale the arrow length based on the force magnitude
+            angle = np.arctan2(buoy.F_body[1], buoy.F_body[0]) # angle of the force vector
+            quat = quaternion_from_euler(0, 0, angle)
+            force_marker.pose.orientation = Quaternion(*quat)
+            marker_array.markers.append(force_marker)
 
         # Publish both arrays
         buoy_array_pub.publish(array_msg)

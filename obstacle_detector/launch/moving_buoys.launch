@@ -3,23 +3,23 @@
     <rosparam param="buoys">
       - name: buoy1
         radius: 0.7
-        mass: 400.0
+        mass: 3.0
         initial_state: [4.0, 0.2, 0.0, 0.0, 0.0, 0.0]
       - name: buoy2
         radius: 0.7
-        mass: 150.0
+        mass: 4.0
         initial_state: [10.0, 0.2, 0.0, 0.0, 0.0, 0.0]
       - name: buoy3
         radius: 0.7
-        mass: 500.0
+        mass: 5.0
         initial_state: [10.0, -2.4, 0.0, 0.0, 0.0, 0.0]
       - name: buoy4
         radius: 0.7
-        mass: 650.0
+        mass: 6.0
         initial_state: [4.0, -2.4, 0.0, 0.0, 0.0, 0.0]
       - name: buoy5
         radius: 0.7
-        mass: 200.0
+        mass: 2.0
         initial_state: [7.0, -1.0, 0.0, 0.0, 0.0, 0.0]
     </rosparam>
   </node>

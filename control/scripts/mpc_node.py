@@ -145,7 +145,7 @@ class MPCNode:
         print("Current state for MPC:", self.current_state)
         print("Current obstacles for MPC:", list(zip(self.obstacle_x, self.obstacle_y, self.obstacle_radius)))
         u, U, X = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
-                               self.obstacle_radius, 0.1*np.ones(self.mpc.num_obs), 0.5*np.ones(self.mpc.num_obs),
+                               self.obstacle_radius, 0.5*np.ones(self.mpc.num_obs), 0.5*np.ones(self.mpc.num_obs),
                                self.initial_guess_state, self.initial_guess_control)  
         self.initial_guess_state = X 
         self.initial_guess_control = U 
