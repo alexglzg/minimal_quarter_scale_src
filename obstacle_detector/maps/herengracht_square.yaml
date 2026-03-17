@@ -1,0 +1,8 @@
+image: herengracht_square.png
+resolution: 0.01
+origin: [-3.54, -3.54, 0.0]
+# actually it is: [1.212800310000000027e+05, 4.861667500000000000e+05, 0], but it is easier to have it in the middle
+# set to -width/2*resolution and -height/2*resolution
+occupied_thresh: 0.65
+free_thresh: 0.65
+negate: 1

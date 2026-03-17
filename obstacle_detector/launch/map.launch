@@ -1,5 +1,10 @@
 <launch>
   <!-- Launch map server -->
   <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_1.yaml" /> -->
-  <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_2.yaml" />
+  <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/map_2.yaml" /> -->
+  <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/herengracht_square.yaml" /> -->
+  <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/prinsengracht.yaml" /> -->
+  <!-- <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/bloemgracht.yaml" /> -->
+  <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/bloemgracht_rect.yaml" />
 </launch>
+

@@ -161,6 +161,9 @@ class MPCCBFPathNode:
 
         self._active_source = "none"  # for logging
 
+        self.init_guess_x = None      # warm-start state trajectory (None until first solve)
+        self.init_guess_u = None      # warm-start input trajectory
+
         # =================================================================
         # Build OCP once
         # =================================================================
@@ -308,12 +311,18 @@ class MPCCBFPathNode:
         for k in range(self.N):
             xk = self.X[k]
             uk = self.U[k]
-            cost += ca.mtimes([(xk[0:3] - self.x_ref_param).T, self.Q, (xk[0:3] - self.x_ref_param)])
+            pos_err = xk[0:2] - self.x_ref_param[0:2]
+            cost += ca.mtimes([pos_err.T, self.Q[0:2, 0:2], pos_err])
+            cost += self.Q[2, 2] * ((ca.sin(xk[2]) - ca.sin(self.x_ref_param[2]))**2 +
+                                     (ca.cos(xk[2]) - ca.cos(self.x_ref_param[2]))**2)
             cost += ca.mtimes([uk.T, self.R, uk])
             cost += ca.mtimes([(xk[3:]).T, self.Q_vel, (xk[3:])])
 
-        cost += ca.mtimes([(self.X[self.N][0:3] - self.x_ref_param).T, self.Q * 10,
-                          (self.X[self.N][0:3] - self.x_ref_param)])
+        xN = self.X[self.N]
+        pos_err_N = xN[0:2] - self.x_ref_param[0:2]
+        cost += ca.mtimes([pos_err_N.T, self.Q[0:2, 0:2] * 10, pos_err_N])
+        cost += self.Q[2, 2] * 10 * ((ca.sin(xN[2]) - ca.sin(self.x_ref_param[2]))**2 +
+                                      (ca.cos(xN[2]) - ca.cos(self.x_ref_param[2]))**2)
 
         # Dynamics and constraints
         for k in range(self.N):
@@ -662,6 +671,16 @@ class MPCCBFPathNode:
     # =====================================================================
     # Solver (unchanged from base)
     # =====================================================================
+    def _reset_warm_start(self):
+        """Reset initial guess to a stationary trajectory at the current state."""
+        x0 = self.current_state.copy()
+        for k in range(self.N):
+            self.opti.set_initial(self.U[k], np.zeros(self.nu))
+            self.opti.set_initial(self.X[k], x0)
+        self.opti.set_initial(self.X[self.N], x0)
+        self.init_guess_x = None
+        self.init_guess_u = None
+
     def solve_mpc(self):
         """Solve the MPC problem with robust warm start handling."""
         if not self.odom_received:
@@ -710,8 +729,8 @@ class MPCCBFPathNode:
                 f"x_ref_param = [{fmt(self.x_ref)}]\n"
                 f"A_param = [{fmt(self.A_poly)}]\n"
                 f"b_param = [{fmt(self.b_poly)}]\n"
-                f"x_init = [{fmt(self.init_guess_x)}]\n"
-                f"u_init = [{fmt(self.init_guess_u)}]"
+                f"x_init = [{fmt(self.init_guess_x) if self.init_guess_x is not None else 'None'}]\n"
+                f"u_init = [{fmt(self.init_guess_u) if self.init_guess_u is not None else 'None'}]"
             )
 
             try:
@@ -721,8 +740,10 @@ class MPCCBFPathNode:
                     u_opt[:, k] = self.opti.debug.value(self.U[k])
                     x_opt[:, k] = self.opti.debug.value(self.X[k])
                 x_opt[:, self.N] = self.opti.debug.value(self.X[self.N])
+                self._reset_warm_start()
                 return u_opt, x_opt
             except:
+                self._reset_warm_start()
                 return None, None
 
     # =====================================================================
@@ -786,6 +807,8 @@ class MPCCBFPathNode:
             if u_opt is not None and x_opt is not None:
                 self.publish_force(u_opt[:, 0])
                 self.publish_trajectory(x_opt)
+            else:
+                self.publish_force(np.zeros(self.nu))  # safety: stop motors
 
             if self.ref_received:
                 self.publish_reference_marker()

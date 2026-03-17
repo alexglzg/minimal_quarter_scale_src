@@ -1,0 +1,13 @@
+image: bloemgracht_rect.png
+resolution: 0.03
+origin:
+- -4.0
+- -8.5
+- 0.0
+occupied_thresh: 0.65
+free_thresh: 0.65
+negate: 1
+#height 1469 pixels
+#width 928 pixels
+# 56 pixels is 5.9 meters
+# approx 9.5 pixels per meter
