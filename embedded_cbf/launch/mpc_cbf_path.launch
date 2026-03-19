@@ -20,7 +20,7 @@
         <!-- Cost weights -->
         <param name="Q_x" value="2.0"/>
         <param name="Q_y" value="2.0"/>
-        <param name="Q_psi" value="0.2"/>
+        <param name="Q_psi" value="0.5"/>
         <param name="Q_surge" value="2.0"/>
         <param name="Q_sway" value="4.0"/>
         <param name="Q_yaw" value="0.0"/>

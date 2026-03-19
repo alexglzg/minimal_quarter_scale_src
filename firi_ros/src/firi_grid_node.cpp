@@ -508,9 +508,10 @@ class FIRIGridNode {
     bool odom_received_ = false;
 
     // Cached obstacle data
-    std::vector<Vector2d> all_boundary_obs_;  // boundary-extracted obstacles
+    std::vector<Vector2d> all_boundary_obs_;  // boundary corner points
     bool grid_cached_ = false;
     std::string frame_id_;
+    double grid_resolution_ = 0.05;  // updated from received grid
 
     // Parameters
     double robot_length_ = 0.9;
@@ -554,6 +555,7 @@ public:
     // ----------------------------------------------------------------
     void gridCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
         frame_id_ = msg->header.frame_id;
+        grid_resolution_ = msg->info.resolution;
         auto t_start = std::chrono::high_resolution_clock::now();
 
         if (use_boundary_extraction_) {
@@ -566,7 +568,7 @@ public:
 
         auto t_end = std::chrono::high_resolution_clock::now();
         double ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-        ROS_INFO("[FIRI Grid] Grid %dx%d (%.3fm) -> %zu boundary obstacles in %.1f ms",
+        ROS_INFO("[FIRI Grid] Grid %dx%d (%.3fm) -> %zu boundary corner points in %.1f ms",
                  msg->info.width, msg->info.height, msg->info.resolution,
                  all_boundary_obs_.size(), ms);
     }
@@ -610,9 +612,14 @@ public:
         }
 
         // 2. Optional additional voxel filter
-        //    If grid resolution < voxel_size, this reduces point count further.
-        //    If grid resolution >= voxel_size, this is effectively a no-op.
-        local_obs = voxelFilter(local_obs, voxel_size_);
+        //    With corner-point boundary extraction, points are already
+        //    deduplicated on the grid-vertex lattice.  Applying a voxel
+        //    filter with bin size > grid_resolution would merge distinct
+        //    corners and reintroduce the safety gap.  So: skip the filter
+        //    when using boundary extraction; apply only in fallback mode.
+        if (!use_boundary_extraction_) {
+            local_obs = voxelFilter(local_obs, voxel_size_);
+        }
 
         // 3. Build robot footprint seed
         double hl = robot_length_ / 2.0;
@@ -652,16 +659,21 @@ public:
 
 private:
     // ================================================================
-    // BOUNDARY EXTRACTION
+    // BOUNDARY EXTRACTION  (corner-point variant)
     // ================================================================
-    // Only extract occupied cells that are adjacent to at least one
-    // free cell (4-connected). This gives the obstacle *surface* that
-    // FIRI needs, discarding interior cells that would produce
-    // redundant halfplanes anyway.
+    // Safety issue with cell-center representation:
+    //   Each occupied cell is a res×res square, but a single center
+    //   point lets FIRI's halfplane cut up to res√2/2 into the cell.
     //
-    // A solid 10-cell-deep wall produces ~2 rows of boundary points
-    // instead of ~10 rows. For typical environments this is a 3-10x
-    // reduction over extracting all occupied cells.
+    // Fix: emit the 4 corner vertices of every boundary cell instead
+    // of the center.  Adjacent cells share corners, so we deduplicate
+    // via an integer-grid hash set.  Along a connected boundary of N
+    // cells the unique corner count is ~2N, not 4N.
+    //
+    // Corner indexing:  cell (col,row) has corners at grid vertices
+    //   (col, row), (col+1, row), (col, row+1), (col+1, row+1)
+    // which map to metric coordinates (col*res, row*res), etc.
+    // (no +0.5 offset — these are actual cell edges, not centers).
 
     void extractBoundaryObstacles(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
         all_boundary_obs_.clear();
@@ -685,7 +697,10 @@ private:
         const int dx[] = {1, -1, 0, 0};
         const int dy[] = {0, 0, 1, -1};
 
-        all_boundary_obs_.reserve(w * h / 10); // rough estimate
+        // Deduplicate corners via integer grid-vertex indices.
+        // Corner vertices live on a (w+1)×(h+1) grid.
+        std::unordered_set<Vector2i, PointHash> corner_set;
+        corner_set.reserve(w * h / 4); // rough estimate
 
         for (int row = 0; row < h; ++row) {
             for (int col = 0; col < w; ++col) {
@@ -702,14 +717,12 @@ private:
                     int nc = col + dx[n];
 
                     if (nr < 0 || nr >= h || nc < 0 || nc >= w) {
-                        // Edge of map counts as boundary
                         is_boundary = true;
                         break;
                     }
 
                     int8_t nval = msg->data[nr * w + nc];
                     if (nval >= 0 && nval < occupancy_threshold_) {
-                        // Neighbor is known-free
                         is_boundary = true;
                         break;
                     }
@@ -717,14 +730,22 @@ private:
 
                 if (!is_boundary) continue;
 
-                // Convert grid cell to world coordinates
-                double x_grid = (col + 0.5) * res;
-                double y_grid = (row + 0.5) * res;
-                double x = ox + x_grid * cos_yaw - y_grid * sin_yaw;
-                double y = oy + x_grid * sin_yaw + y_grid * cos_yaw;
-
-                all_boundary_obs_.push_back(Vector2d(x, y));
+                // Insert the 4 corner vertices of this cell
+                corner_set.insert(Vector2i(col,     row    ));
+                corner_set.insert(Vector2i(col + 1, row    ));
+                corner_set.insert(Vector2i(col,     row + 1));
+                corner_set.insert(Vector2i(col + 1, row + 1));
             }
+        }
+
+        // Convert unique corner vertices to world coordinates
+        all_boundary_obs_.reserve(corner_set.size());
+        for (const auto& cv : corner_set) {
+            double x_grid = cv.x() * res;
+            double y_grid = cv.y() * res;
+            double x = ox + x_grid * cos_yaw - y_grid * sin_yaw;
+            double y = oy + x_grid * sin_yaw + y_grid * cos_yaw;
+            all_boundary_obs_.push_back(Vector2d(x, y));
         }
     }
 

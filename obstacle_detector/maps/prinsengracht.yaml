@@ -1,5 +1,5 @@
 image: prinsengracht.png
-resolution: 0.01
+resolution: 0.011
 origin: [-5.7, -3.54, 0.0]
 # actually it is: [1.212800310000000027e+05, 4.861667500000000000e+05, 0], but it is easier to have it in the middle
 # set to -width/2*resolution and -height/2*resolution
