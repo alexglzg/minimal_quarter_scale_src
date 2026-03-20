@@ -622,8 +622,8 @@ public:
         }
 
         // 3. Build robot footprint seed
-        double hl = robot_length_ / 2.0;
-        double hw = robot_width_ / 2.0;
+        double hl = robot_length_ / 2.0 + 0.025;  // add small margin to ensure manageability
+        double hw = robot_width_ / 2.0 + 0.025;
         Matrix2d R;
         R << cos(robot_yaw_), -sin(robot_yaw_),
              sin(robot_yaw_),  cos(robot_yaw_);

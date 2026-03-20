@@ -23,7 +23,7 @@ import numpy as np
 import casadi as ca
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import String
+from std_msgs.msg import String, Float64, Float64MultiArray
 from roboat_core.msg import Force
 from decomp_ros_msgs.msg import PolyhedronArray
 from tf.transformations import euler_from_quaternion
@@ -48,6 +48,7 @@ class MPCCBFPathNode:
             self.max_yaw_rate = rospy.get_param('~max_yaw_rate', 1.0)
             self.gamma = rospy.get_param('~gamma', 0.8)
             self.max_approx = rospy.get_param('~max_approx', 5e-3)
+            self.safety_margin = rospy.get_param('~safety_margin', 0.025)
 
             # Robot dimensions
             self.L_robot = rospy.get_param('~robot_length', 0.1)
@@ -101,6 +102,7 @@ class MPCCBFPathNode:
             self.max_yaw_rate = params.get('max_yaw_rate', 1.0)
             self.gamma = params['gamma']
             self.max_approx = params['max_approx']
+            self.safety_margin = params.get('safety_margin', 0.0)
 
             self.L_robot = params['robot_length']
             self.W_robot = params['robot_width']
@@ -177,6 +179,10 @@ class MPCCBFPathNode:
             self.traj_pub = rospy.Publisher('/mpc_trajectory', Path, queue_size=1)
             self.ref_marker_pub = rospy.Publisher('/mpc_reference', PoseStamped, queue_size=1)
             self.status_pub = rospy.Publisher('/mpc_status', String, queue_size=1)
+
+            # MPC stats publishers
+            self.solve_time_pub = rospy.Publisher('/mpc_stats/solve_time_ms', Float64, queue_size=1)
+            self.cbf_pub = rospy.Publisher('/mpc_stats/cbf', Float64MultiArray, queue_size=1)
 
             # =============================================================
             # ROS Subscribers
@@ -257,6 +263,34 @@ class MPCCBFPathNode:
         world_y = s * local_x + c * local_y + y
 
         return ca.horzcat(world_x, world_y)
+
+    # =====================================================================
+    # CBF stats computation (NumPy, post-solve)
+    # =====================================================================
+    def _vertices_np(self, x):
+        """Robot vertices in world frame, NumPy. Returns (4, 2) array."""
+        c, s = np.cos(x[2]), np.sin(x[2])
+        L, W = self.L_robot, self.W_robot
+        local = np.array([[L/2, W/2], [L/2, -W/2], [-L/2, -W/2], [-L/2, W/2]])
+        R = np.array([[c, -s], [s, c]])
+        return (R @ local.T).T + x[0:2]
+
+    def _compute_cbf_stats(self, x_opt):
+        min_h = float('inf')
+        min_slack = float('inf')
+
+        verts_0 = self._vertices_np(x_opt[:, 0])
+        verts_1 = self._vertices_np(x_opt[:, 1])
+        for j in range(4):
+            for i in range(self.n_active):
+                h_0 = self.b_poly[i] - (self.A_poly[i, 0] * verts_0[j, 0]
+                                    + self.A_poly[i, 1] * verts_0[j, 1])
+                h_1 = self.b_poly[i] - (self.A_poly[i, 0] * verts_1[j, 0]
+                                    + self.A_poly[i, 1] * verts_1[j, 1])
+                min_h = min(min_h, h_0)
+                min_slack = min(min_slack, (h_1 + self.safety_margin)  - self.gamma * (h_0 + self.safety_margin))
+
+        return min_h, min_slack
 
     # =====================================================================
     # OCP construction (unchanged)
@@ -358,8 +392,8 @@ class MPCCBFPathNode:
                         vj_0_k1 = verts_xk1[j, 0]
                         vj_1_k1 = verts_xk1[j, 1]
                         bi = self.b_param[i]
-                        dist_xk = bi - (Ai_0 * vj_0_k + Ai_1 * vj_1_k)
-                        dist_xk1 = bi - (Ai_0 * vj_0_k1 + Ai_1 * vj_1_k1)
+                        dist_xk = bi - (Ai_0 * vj_0_k + Ai_1 * vj_1_k) + self.safety_margin
+                        dist_xk1 = bi - (Ai_0 * vj_0_k1 + Ai_1 * vj_1_k1) + self.safety_margin
                         self.opti.subject_to(dist_xk1 >= self.gamma*dist_xk)
 
                 # # LSE approximation of CBF
@@ -400,7 +434,7 @@ class MPCCBFPathNode:
         # Solver options
         opts = {
             "fatrop.print_level": 0,
-            "print_time": 0,
+            "print_time": 1,
             "fatrop.max_iter": 100,
             "fatrop.tol": 1e-4,
             "fatrop.mu_init": 1e-1,
@@ -503,6 +537,7 @@ class MPCCBFPathNode:
 
         self.n_active = idx
         self.poly_received = True
+
 
     # =====================================================================
     # Path following: lookahead reference extraction
@@ -701,7 +736,10 @@ class MPCCBFPathNode:
         self.opti.set_value(self.b_param, self.b_poly)
 
         try:
+
             sol = self.opti.solve()
+            comp_time = sol.stats()['t_wall_total']
+            # rospy.loginfo_throttle(1.0, f"MPC solved in {comp_time*1e3:.3f} ms")
 
             u_opt = np.zeros((self.nu, self.N))
             x_opt = np.zeros((self.nx, self.N + 1))
@@ -718,6 +756,12 @@ class MPCCBFPathNode:
                 self.opti.set_initial(self.U[k], u_opt[:, k])
                 self.opti.set_initial(self.X[k], x_opt[:, k])
             self.opti.set_initial(self.X[self.N], x_opt[:, self.N])
+
+            # Publish stats
+            self.publish_solve_time(comp_time * 1e3)
+            if self.n_active > 0:
+                min_h, min_slack = self._compute_cbf_stats(x_opt)
+                self.publish_cbf_stats(min_h, min_slack)
 
             return u_opt, x_opt
 
@@ -793,6 +837,16 @@ class MPCCBFPathNode:
     def publish_status(self):
         """Publish active reference source for debugging."""
         self.status_pub.publish(String(data=self._active_source))
+
+    def publish_solve_time(self, solve_time_ms):
+        """Publish MPC solve time in milliseconds."""
+        self.solve_time_pub.publish(Float64(data=solve_time_ms))
+
+    def publish_cbf_stats(self, min_h, min_slack):
+        """Publish CBF stats: [min_h, min_slack]."""
+        msg = Float64MultiArray()
+        msg.data = [float(min_h), float(min_slack)]
+        self.cbf_pub.publish(msg)
 
     # =====================================================================
     # Main loop

@@ -632,8 +632,8 @@ public:
                           raw_obs.size(), obstacles.size());
 
         // 3. Robot footprint as seed polygon [Paper Eq. 1: seed = conv{v1..vs}]
-        double hl = length_ / 2.0;
-        double hw = width_ / 2.0;
+        double hl = length_ / 2.0 + 0.025; // add small margin
+        double hw = width_ / 2.0 + 0.025;
         Matrix2d R;
         R << cos(robot_yaw_), -sin(robot_yaw_),
              sin(robot_yaw_),  cos(robot_yaw_);
