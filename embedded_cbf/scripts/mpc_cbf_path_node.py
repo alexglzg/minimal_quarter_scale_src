@@ -392,8 +392,8 @@ class MPCCBFPathNode:
                         vj_0_k1 = verts_xk1[j, 0]
                         vj_1_k1 = verts_xk1[j, 1]
                         bi = self.b_param[i]
-                        dist_xk = bi - (Ai_0 * vj_0_k + Ai_1 * vj_1_k) + self.safety_margin
-                        dist_xk1 = bi - (Ai_0 * vj_0_k1 + Ai_1 * vj_1_k1) + self.safety_margin
+                        dist_xk = bi - (Ai_0 * vj_0_k + Ai_1 * vj_1_k) - self.safety_margin
+                        dist_xk1 = bi - (Ai_0 * vj_0_k1 + Ai_1 * vj_1_k1) - self.safety_margin
                         self.opti.subject_to(dist_xk1 >= self.gamma*dist_xk)
 
                 # # LSE approximation of CBF

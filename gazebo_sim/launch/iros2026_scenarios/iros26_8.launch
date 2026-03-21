@@ -3,7 +3,7 @@
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box2" />
         <arg name="x" value="2.5" />
-        <arg name="y" value="0.35" />
+        <arg name="y" value="-0.35" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
@@ -14,7 +14,7 @@
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box3" />
         <arg name="x" value="3.8" />
-        <arg name="y" value="0.4" />
+        <arg name="y" value="-0.47" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
@@ -24,8 +24,8 @@
 
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box4" />
-        <arg name="x" value="4.7" />
-        <arg name="y" value="-0.1" />
+        <arg name="x" value="4.6" />
+        <arg name="y" value="-0.17" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
@@ -33,21 +33,21 @@
         <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/cylinder.urdf" />
     </include>
 
-	<!-- <include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
+	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box5" />
-        <arg name="x" value="6.25" />
-        <arg name="y" value="-2.25" />
+        <arg name="x" value="3.2" />
+        <arg name="y" value="-0.25" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
         <arg name="yaw" value="0.0" />
         <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/cylinder.urdf" />
-    </include> -->
+    </include>
 
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box6" />
-        <arg name="x" value="5.25" />
-        <arg name="y" value="-2.75" />
+        <arg name="x" value="6.73" />
+        <arg name="y" value="-2.5" />
         <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
@@ -57,8 +57,8 @@
 
 	<include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box7" />
-        <arg name="x" value="6.1" />
-        <arg name="y" value="-1.5" />
+        <arg name="x" value="5.63" />
+        <arg name="y" value="-1.47" />
         <arg name="z" value="0.2" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
@@ -68,12 +68,12 @@
 
     <include file="$(find gazebo_sim)/launch/spawn_urdf.launch">
         <arg name="robot_name" value="box8" />
-        <arg name="x" value="5.9" />
-        <arg name="y" value="-0.4" />
+        <arg name="x" value="5.29" />
+        <arg name="y" value="-0.38" />
          <arg name="z" value="0.0" />
         <arg name="roll" value="0.0" />
         <arg name="pitch" value="0.0" />
-        <arg name="yaw" value="0.4" />
+        <arg name="yaw" value="0.0" />
         <arg name="urdf_robot_file" value="$(find gazebo_sim)/urdf/cylinder.urdf" />
     </include>
 

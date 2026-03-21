@@ -4,7 +4,7 @@ roboat_planning:
 
   # Occupancy Map Params
   _mapResolution: 0.05
-  _occuMapInflation: 0.225 #0.52
+  _occuMapInflation: 0.25 #0.52
   _occuMapField: 0.4
 
   # Laser scan params

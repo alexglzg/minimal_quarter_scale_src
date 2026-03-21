@@ -1,0 +1,42 @@
+<launch>
+
+    <arg name="record" default="false"/>
+
+    <arg name="x_0"  default="6.14" />
+    <arg name="y_0"  default="-3.3" />
+    <arg name="psi"  default="-2.9" />
+
+    <arg name="goal_x"   default="-3.83" />
+    <arg name="goal_y"   default="-2.37" />
+    <arg name="goal_yaw" default="-3.0" />
+
+    <include file="$(find embedded_cbf)/launch/experiments/map_test.launch">
+        <arg name="x_0"  value="$(arg x_0)" />
+        <arg name="y_0"  value="$(arg y_0)" />
+        <arg name="psi"  value="$(arg psi)" />
+    </include>
+
+    <node pkg="map_server" type="map_server" name="map_server" args="$(find obstacle_detector)/maps/prinsengracht.yaml" />
+
+    <node name="send_goal" pkg="embedded_cbf" type="send_goal.py" output="screen">
+        <param name="goal_x"   value="$(arg goal_x)" />
+        <param name="goal_y"   value="$(arg goal_y)" />
+        <param name="goal_yaw" value="$(arg goal_yaw)" />
+        <param name="delay"    value="8.0" />
+    </node>
+
+    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" output="screen"
+          args="-o /ros1_ws/src/embedded_cbf/bags/map_mpc_test
+                /odometry/filtered
+                /map
+                /polyhedron_array
+                /global_plan
+                /mpc_force
+                /mpc_trajectory
+                /mpc_reference
+                /mpc_stats/solve_time_ms
+                /mpc_stats/cbf
+                /mpc_status
+                /move_base_simple/goal" />
+
+</launch>

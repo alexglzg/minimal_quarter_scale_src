@@ -1,0 +1,7 @@
+<launch>
+
+    <include file="$(find embedded_cbf)/launch/experiments/gazebo_test.launch" />
+
+    <include file="$(find gazebo_sim)/launch/iros2026_scenarios/iros26_9.launch" />
+
+</launch>

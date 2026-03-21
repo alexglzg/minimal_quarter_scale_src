@@ -1,42 +1,88 @@
 <launch>
+
+    <!-- MPC parameters -->
+    <arg name="horizon"       default="41"/>
+    <arg name="dt"            default="0.1"/>
+    <arg name="N_cbf"         default="38"/>
+    <arg name="rate"          default="10.0"/>
+    <arg name="max_force"     default="4.0"/>
+    <arg name="gamma"         default="0.8"/>
+    <arg name="max_approx"    default="0.005"/>
+
+    <!-- Robot dimensions -->
+    <arg name="robot_length"  default="0.9"/>
+    <arg name="robot_width"   default="0.45"/>
+
+    <!-- Maximum halfplanes for polytope constraint -->
+    <arg name="max_halfplanes" default="20"/>
+
+    <!-- Safety parameters -->
+    <arg name="safety_margin" default="0.025"/>
+
+    <!-- Cost weights -->
+    <arg name="Q_x"           default="2.0"/>
+    <arg name="Q_y"           default="2.0"/>
+    <arg name="Q_psi"         default="0.5"/>
+    <arg name="Q_surge"       default="2.0"/>
+    <arg name="Q_sway"        default="4.0"/>
+    <arg name="Q_yaw"         default="0.0"/>
+    <arg name="R_f1"          default="1.0"/>
+    <arg name="R_f2"          default="1.0"/>
+    <arg name="R_f3"          default="2.0"/>
+    <arg name="R_f4"          default="2.0"/>
+
+    <!-- Boat dynamics (QuarterScale) -->
+    <arg name="m11"           default="12.0"/>
+    <arg name="m22"           default="16.0"/>
+    <arg name="m33"           default="3.0"/>
+    <arg name="d11"           default="6.0"/>
+    <arg name="d22"           default="8.0"/>
+    <arg name="d33"           default="0.6"/>
+    <arg name="aa"            default="0.45"/>
+    <arg name="bb"            default="0.9"/>
+
     <!-- MPC-CBF Node -->
     <node name="mpc_cbf_path_node" pkg="embedded_cbf" type="mpc_cbf_path_node.py" output="screen">
         <!-- MPC parameters -->
-        <param name="horizon" value="41"/>
-        <param name="dt" value="0.1"/>
-        <param name="N_cbf" value="38"/>
-        <param name="rate" value="10.0"/>
-        <param name="max_force" value="4.0"/>
-        <param name="gamma" value="0.8"/>
-        <param name="max_approx" value="0.005"/>
-        
+        <param name="horizon"       value="$(arg horizon)"/>
+        <param name="dt"            value="$(arg dt)"/>
+        <param name="N_cbf"         value="$(arg N_cbf)"/>
+        <param name="rate"          value="$(arg rate)"/>
+        <param name="max_force"     value="$(arg max_force)"/>
+        <param name="gamma"         value="$(arg gamma)"/>
+        <param name="max_approx"    value="$(arg max_approx)"/>
+
         <!-- Robot dimensions -->
-        <param name="robot_length" value="0.9"/>
-        <param name="robot_width" value="0.45"/>
-        
+        <param name="robot_length"  value="$(arg robot_length)"/>
+        <param name="robot_width"   value="$(arg robot_width)"/>
+
         <!-- Maximum halfplanes for polytope constraint -->
-        <param name="max_halfplanes" value="20"/>
-        
+        <param name="max_halfplanes" value="$(arg max_halfplanes)"/>
+
+        <!-- Safety parameters -->
+        <param name="safety_margin" value="$(arg safety_margin)"/>
+
         <!-- Cost weights -->
-        <param name="Q_x" value="2.0"/>
-        <param name="Q_y" value="2.0"/>
-        <param name="Q_psi" value="0.5"/>
-        <param name="Q_surge" value="2.0"/>
-        <param name="Q_sway" value="4.0"/>
-        <param name="Q_yaw" value="0.0"/>
-        <param name="R_f1" value="1.0"/>
-        <param name="R_f2" value="1.0"/>
-        <param name="R_f3" value="2.0"/>
-        <param name="R_f4" value="2.0"/>
-                
+        <param name="Q_x"           value="$(arg Q_x)"/>
+        <param name="Q_y"           value="$(arg Q_y)"/>
+        <param name="Q_psi"         value="$(arg Q_psi)"/>
+        <param name="Q_surge"       value="$(arg Q_surge)"/>
+        <param name="Q_sway"        value="$(arg Q_sway)"/>
+        <param name="Q_yaw"         value="$(arg Q_yaw)"/>
+        <param name="R_f1"          value="$(arg R_f1)"/>
+        <param name="R_f2"          value="$(arg R_f2)"/>
+        <param name="R_f3"          value="$(arg R_f3)"/>
+        <param name="R_f4"          value="$(arg R_f4)"/>
+
         <!-- Boat dynamics (QuarterScale) -->
-        <param name="system_dynamics/m11" value="12.0"/>
-        <param name="system_dynamics/m22" value="16.0"/>
-        <param name="system_dynamics/m33" value="3.0"/>
-        <param name="system_dynamics/d11" value="6.0"/>
-        <param name="system_dynamics/d22" value="8.0"/>
-        <param name="system_dynamics/d33" value="0.6"/>
-        <param name="system_dynamics/aa" value="0.45"/>
-        <param name="system_dynamics/bb" value="0.9"/>
+        <param name="system_dynamics/m11" value="$(arg m11)"/>
+        <param name="system_dynamics/m22" value="$(arg m22)"/>
+        <param name="system_dynamics/m33" value="$(arg m33)"/>
+        <param name="system_dynamics/d11" value="$(arg d11)"/>
+        <param name="system_dynamics/d22" value="$(arg d22)"/>
+        <param name="system_dynamics/d33" value="$(arg d33)"/>
+        <param name="system_dynamics/aa"  value="$(arg aa)"/>
+        <param name="system_dynamics/bb"  value="$(arg bb)"/>
     </node>
+
 </launch>

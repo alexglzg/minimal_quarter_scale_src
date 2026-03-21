@@ -1,0 +1,26 @@
+<launch>
+
+    <arg name="record" default="true"/>
+
+    <!-- Include MPC-CBF node -->
+    <include file="$(find embedded_cbf)/launch/mpc_cbf_path.launch">
+        <!-- <arg name="Q_psi"         value="0.1"/> -->
+        <!-- <arg name="Q_yaw"       value="0.1"/> -->
+        <!-- <arg name="safety_margin" value="0.1"/> -->
+    </include>
+
+    <!-- Record relevant topics -->
+    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" output="screen"
+          args="-o /ros1_ws/src/embedded_cbf/bags/gazebo_mpc_test
+                /odometry/filtered
+                /filtered_scan
+                /polyhedron_array
+                /mpc_force
+                /mpc_trajectory
+                /mpc_reference
+                /mpc_stats/solve_time_ms
+                /mpc_stats/cbf
+                /mpc_status
+                /planning/planning/execute_path" />
+
+</launch>
