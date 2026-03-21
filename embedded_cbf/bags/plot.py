@@ -430,6 +430,9 @@ def plot_trajectory_progression(data, L, W, mode='scan', step_interval=100,
     ax.set_ylabel('y [m]')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
+    if mode == 'scan':
+        ax.set_xlim(-2, 8)
+        ax.set_ylim(-10, 2)
 
     return fig, ax
 
@@ -438,12 +441,12 @@ def plot_trajectory_progression(data, L, W, mode='scan', step_interval=100,
 # Figure 2: Time-series (clearance + CBF slack)
 # =============================================================================
 
-def plot_timeseries(data, footprint_clearance=None, ax_h=None, ax_s=None):
+def plot_timeseries(data, footprint_clearance=None, ax_h=None, ax_s=None, slack=False):
     """
     Two-subplot time-series figure.
 
     Top:    min_h (footprint-to-polytope) and footprint-to-obstacle clearance
-    Bottom: min_slack (CBF activity at k=0)
+    Bottom: min_slack (CBF activity at k=0)  [omitted when slack=False]
     """
     cbf = data['cbf']
     if len(cbf) == 0:
@@ -458,11 +461,18 @@ def plot_timeseries(data, footprint_clearance=None, ax_h=None, ax_s=None):
     t0 = t_cbf[0]
     t_cbf_rel = t_cbf - t0
 
-    if ax_h is None or ax_s is None:
-        fig, (ax_h, ax_s) = plt.subplots(2, 1, figsize=(8, 5),
-                                          constrained_layout=True, sharex=True)
+    if slack:
+        if ax_h is None or ax_s is None:
+            fig, (ax_h, ax_s) = plt.subplots(2, 1, figsize=(8, 5),
+                                              constrained_layout=True, sharex=True)
+        else:
+            fig = ax_h.get_figure()
     else:
-        fig = ax_h.get_figure()
+        ax_s = None
+        if ax_h is None:
+            fig, ax_h = plt.subplots(1, 1, figsize=(8, 3), constrained_layout=True)
+        else:
+            fig = ax_h.get_figure()
 
     # --- Top: clearance ---
     ax_h.plot(t_cbf_rel, min_h, 'b-', linewidth=1.5,
@@ -478,14 +488,17 @@ def plot_timeseries(data, footprint_clearance=None, ax_h=None, ax_s=None):
     ax_h.legend(fontsize=10)
     ax_h.grid(True, alpha=0.3)
 
-    # --- Bottom: CBF slack ---
-    ax_s.plot(t_cbf_rel, min_slack, 'g-', linewidth=1.5,
-              label=r'CBF slack $h(x_1) - \gamma h(x_0)$')
-    ax_s.axhline(y=0, color='k', linestyle='--', linewidth=0.8, alpha=0.5)
-    ax_s.set_xlabel('Time [s]')
-    ax_s.set_ylabel('CBF slack [m]')
-    ax_s.legend(fontsize=10)
-    ax_s.grid(True, alpha=0.3)
+    if slack:
+        # --- Bottom: CBF slack ---
+        ax_s.plot(t_cbf_rel, min_slack, 'g-', linewidth=1.5,
+                  label=r'CBF slack $h(x_1) - \gamma h(x_0)$')
+        ax_s.axhline(y=0, color='k', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax_s.set_xlabel('Time [s]')
+        ax_s.set_ylabel('CBF slack [m]')
+        ax_s.legend(fontsize=10)
+        ax_s.grid(True, alpha=0.3)
+    else:
+        ax_h.set_xlabel('Time [s]')
 
     return fig, ax_h, ax_s
 
@@ -551,6 +564,8 @@ def main():
                         help='Specific odom indices for polytope overlay')
     parser.add_argument('--no-obstacles', action='store_true',
                         help='Skip obstacle loading (faster)')
+    parser.add_argument('--no-slack', action='store_true',
+                        help='Omit CBF slack subplot from timeseries figure')
     parser.add_argument('--save', action='store_true',
                         help='Save figures as PDF and PNG')
     args = parser.parse_args()
@@ -589,14 +604,15 @@ def main():
         show_obstacles=not args.no_obstacles,
         show_ref_path=False,
     )
-    ax1.set_title(f'Trajectory: {bag_name}')
+    # ax1.set_title(f'Trajectory: {bag_name}')
     if args.save:
         fig1.savefig(f'{bag_name}_trajectory.pdf', dpi=300)
         fig1.savefig(f'{bag_name}_trajectory.png', dpi=300)
         print(f"Saved: {bag_name}_trajectory.pdf/png")
 
     # Figure 2: Time-series
-    fig2, ax_h, ax_s = plot_timeseries(data, footprint_clearance=fc_clearance)
+    fig2, ax_h, ax_s = plot_timeseries(data, footprint_clearance=fc_clearance,
+                                        slack=not args.no_slack)
     if fig2 is not None:
         if args.save:
             fig2.savefig(f'{bag_name}_timeseries.pdf', dpi=300)
