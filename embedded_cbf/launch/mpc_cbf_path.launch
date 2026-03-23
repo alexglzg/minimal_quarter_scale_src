@@ -19,6 +19,9 @@
     <!-- Safety parameters -->
     <arg name="safety_margin" default="0.025"/>
 
+    <!-- Path parameters -->
+    <arg name="lookahead_dist" default="1.0"/>
+
     <!-- Cost weights -->
     <arg name="Q_x"           default="2.0"/>
     <arg name="Q_y"           default="2.0"/>
@@ -61,6 +64,9 @@
 
         <!-- Safety parameters -->
         <param name="safety_margin" value="$(arg safety_margin)"/>
+
+        <!-- Path parameters -->
+        <param name="lookahead_dist" value="$(arg lookahead_dist)"/>
 
         <!-- Cost weights -->
         <param name="Q_x"           value="$(arg Q_x)"/>
