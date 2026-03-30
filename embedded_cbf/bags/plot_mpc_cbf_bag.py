@@ -5,11 +5,16 @@ MPC-CBF Rosbag Analysis Script
 Generates paper figures from a ROS1 bag:
   1. Trajectory progression (footprint rectangles + polytopes at key timesteps)
   2. Time-series: min_h (polytope clearance), min_slack (CBF activity),
-     footprint-to-obstacle clearance (offline from LaserScan)
-  3. Solve time statistics (printed, not plotted)
+     footprint-to-obstacle clearance (offline)
+  3. Solve time statistics (printed)
+
+Supports two modes:
+  scan    — Gazebo/LiDAR experiments (uses /filtered_scan, /planning/planning/execute_path)
+  gridmap — Grid-based experiments (uses /map, /global_plan)
 
 Usage:
-  python3 plot_mpc_cbf_bag.py <path_to_bag> [--step N] [--no-scan]
+  python3 plot_mpc_cbf_bag.py <bag> --mode scan    [--step N] [--save]
+  python3 plot_mpc_cbf_bag.py <bag> --mode gridmap  [--step N] [--save]
 """
 
 import rosbag
@@ -17,11 +22,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.transforms as mtransforms
-from matplotlib.collections import PatchCollection, LineCollection
 from tf.transformations import euler_from_quaternion
 import argparse
 import os
-import sys
 
 # =============================================================================
 # Matplotlib config for publication
@@ -36,44 +39,61 @@ plt.rcParams['font.size'] = 12
 # Data loading
 # =============================================================================
 
-def load_bag(bag_path, load_scan=True):
+def load_bag(bag_path, mode='scan'):
     """
     Load all relevant topics from the bag.
 
+    Args:
+        bag_path: path to rosbag
+        mode:     'scan' (Gazebo/LiDAR) or 'gridmap' (grid-based)
+
     Returns dict with keys:
-        odom:       list of (t, x, y, yaw, u, v, r)   — ENU frame
-        cbf:        list of (t, min_h, min_slack)
-        solve_time: list of (t, ms)
-        polytopes:  list of (t, A, b, n_active)         — as received (ENU normals)
-        scan:       list of (t, Nx2 array)               — ENU, in sensor frame
-        mpc_traj:   list of (t, Nx2 array)               — ENU
-        exec_path:  list of (t, Nx2 array)               — ENU
-        mpc_ref:    list of (t, x, y, yaw)               — ENU
+        odom:         list of (t, x, y, yaw, u, v, r)   — ENU
+        cbf:          list of (t, min_h, min_slack)
+        solve_time:   list of (t, ms)
+        polytopes:    list of (t, A, b, n_active)         — ENU
+        obstacle_pts: Nx2 array of obstacle points in world frame (ENU)
+        gridmap:      dict with 'data','resolution','origin','width','height' or None
+        ref_path:     list of (t, Nx2 array)               — ENU
+        mpc_traj:     list of (t, Nx2 array)               — ENU
+        mpc_ref:      list of (t, x, y, yaw)               — ENU
     """
     data = {
         'odom': [],
         'cbf': [],
         'solve_time': [],
         'polytopes': [],
-        'scan': [],
+        'obstacle_pts': None,
+        'gridmap': None,
+        'ref_path': [],
         'mpc_traj': [],
-        'exec_path': [],
         'mpc_ref': [],
     }
 
+    # Common topics
     topics = [
         '/odometry/filtered',
         '/mpc_stats/cbf',
         '/mpc_stats/solve_time_ms',
         '/polyhedron_array',
         '/mpc_trajectory',
-        '/planning/planning/execute_path',
         '/mpc_reference',
     ]
-    if load_scan:
-        topics.append('/filtered_scan')
 
-    print(f"Loading bag: {bag_path}")
+    # Mode-specific topics
+    if mode == 'scan':
+        topics.append('/filtered_scan')
+        topics.append('/planning/planning/execute_path')
+        ref_path_topic = '/planning/planning/execute_path'
+    else:  # gridmap
+        topics.append('/map')
+        topics.append('/global_plan')
+        ref_path_topic = '/global_plan'
+
+    # Temporary storage for scan data (needs odom for transform)
+    scan_raw = []
+
+    print(f"Loading bag: {bag_path} (mode: {mode})")
     with rosbag.Bag(bag_path, 'r') as bag:
         for topic, msg, t in bag.read_messages(topics=topics):
             ts = t.to_sec()
@@ -112,31 +132,63 @@ def load_bag(bag_path, load_scan=True):
                         data['polytopes'].append((ts, A, b, len(normals)))
 
             elif topic == '/filtered_scan':
-                # Convert LaserScan to 2D points in sensor frame
                 angles = np.arange(msg.angle_min,
                                    msg.angle_min + len(msg.ranges) * msg.angle_increment,
                                    msg.angle_increment)[:len(msg.ranges)]
                 ranges = np.array(msg.ranges)
-                # Filter invalid ranges
                 valid = (ranges >= msg.range_min) & (ranges <= msg.range_max) & np.isfinite(ranges)
                 if np.any(valid):
                     r_valid = ranges[valid]
                     a_valid = angles[valid]
                     pts = np.column_stack([r_valid * np.cos(a_valid),
                                            r_valid * np.sin(a_valid)])
-                    data['scan'].append((ts, pts))
+                    scan_raw.append((ts, pts))
+
+            elif topic == '/map':
+                res = msg.info.resolution
+                ox = msg.info.origin.position.x
+                oy = msg.info.origin.position.y
+                w = msg.info.width
+                h = msg.info.height
+                grid = np.array(msg.data).reshape((h, w))
+
+                data['gridmap'] = {
+                    'data': grid,
+                    'resolution': res,
+                    'origin': (ox, oy),
+                    'width': w,
+                    'height': h,
+                }
+
+                # Extract occupied cell corners as obstacle points (world frame)
+                occupied = np.argwhere(grid > 50)  # row, col
+                if len(occupied) > 0:
+                    corners = []
+                    for row, col in occupied:
+                        cx = ox + col * res
+                        cy = oy + row * res
+                        corners.extend([
+                            [cx,       cy],
+                            [cx + res, cy],
+                            [cx,       cy + res],
+                            [cx + res, cy + res],
+                        ])
+                    data['obstacle_pts'] = np.array(corners)
+                    print(f"  Gridmap: {w}x{h}, resolution={res}m, "
+                          f"{len(occupied)} occupied cells, "
+                          f"{len(corners)} corner points")
+
+            elif topic == ref_path_topic:
+                pts = np.array([[p.pose.position.x, p.pose.position.y]
+                                for p in msg.poses])
+                if len(pts) > 0:
+                    data['ref_path'].append((ts, pts))
 
             elif topic == '/mpc_trajectory':
                 pts = np.array([[p.pose.position.x, p.pose.position.y]
                                 for p in msg.poses])
                 if len(pts) > 0:
                     data['mpc_traj'].append((ts, pts))
-
-            elif topic == '/planning/planning/execute_path':
-                pts = np.array([[p.pose.position.x, p.pose.position.y]
-                                for p in msg.poses])
-                if len(pts) > 0:
-                    data['exec_path'].append((ts, pts))
 
             elif topic == '/mpc_reference':
                 x = msg.pose.position.x
@@ -145,8 +197,31 @@ def load_bag(bag_path, load_scan=True):
                 _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
                 data['mpc_ref'].append((ts, x, y, yaw))
 
+    # Post-process scan data: transform to world frame and accumulate
+    if mode == 'scan' and len(scan_raw) > 0 and len(data['odom']) > 0:
+        odom_times = np.array([o[0] for o in data['odom']])
+        all_world_pts = []
+        for ts, scan_pts in scan_raw:
+            oidx = np.argmin(np.abs(odom_times - ts))
+            _, ox, oy, oyaw = (data['odom'][oidx][0], data['odom'][oidx][1],
+                               data['odom'][oidx][2], data['odom'][oidx][3])
+            world_pts = scan_to_world(scan_pts, ox, oy, oyaw)
+            all_world_pts.append(world_pts)
+        data['obstacle_pts'] = np.vstack(all_world_pts)
+        # Keep raw scans for per-timestep clearance
+        data['_scan_raw'] = scan_raw
+
     for key in data:
-        print(f"  {key}: {len(data[key])} messages")
+        if key.startswith('_'):
+            continue
+        if isinstance(data[key], list):
+            print(f"  {key}: {len(data[key])} messages")
+        elif isinstance(data[key], np.ndarray):
+            print(f"  {key}: {data[key].shape}")
+        elif data[key] is not None:
+            print(f"  {key}: loaded")
+        else:
+            print(f"  {key}: None")
 
     return data
 
@@ -167,14 +242,6 @@ def polytope_to_polygon(A, b, interior_point, n_active=None):
     """
     Convert halfplane representation {x: Ax <= b} to a polygon.
     Uses the robot position as interior point (guaranteed inside by FIRI).
-
-    Args:
-        A:              (n, 2) normals
-        b:              (n,) offsets
-        interior_point: (2,) point known to be inside (robot position)
-        n_active:       number of active halfplanes
-
-    Returns vertices as (N, 2) array, or None if failed.
     """
     from scipy.spatial import HalfspaceIntersection, ConvexHull
 
@@ -182,65 +249,71 @@ def polytope_to_polygon(A, b, interior_point, n_active=None):
         A = A[:n_active]
         b = b[:n_active]
 
-    # Add large bounding box to ensure bounded intersection
     M = 50.0
     A_box = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]])
     b_box = np.array([M, M, M, M])
-
     A_all = np.vstack([A, A_box])
     b_all = np.concatenate([b, b_box])
-
-    # scipy halfspace format: A @ x - b <= 0
     halfspaces = np.column_stack([A_all, -b_all])
 
     try:
         hs = HalfspaceIntersection(halfspaces, interior_point)
         hull = ConvexHull(hs.intersections)
         return hs.intersections[hull.vertices]
-    except Exception as e:
+    except Exception:
         return None
 
 
 def scan_to_world(scan_pts, x, y, yaw):
-    """Transform scan points from sensor frame to world frame (ENU).
-    Assumes sensor is at robot center (adjust offset if needed)."""
+    """Transform scan points from sensor frame to world frame (ENU)."""
     c, s = np.cos(yaw), np.sin(yaw)
     R = np.array([[c, -s], [s, c]])
     return (R @ scan_pts.T).T + np.array([x, y])
 
 
-def compute_footprint_to_scan_clearance(odom_data, scan_data, L, W,
-                                         max_scan_age=0.15):
+# =============================================================================
+# Clearance computation (unified)
+# =============================================================================
+
+def compute_footprint_clearance(odom_data, obstacle_pts, L, W,
+                                 scan_raw=None, max_scan_age=0.15):
     """
-    For each odom timestep, find the closest scan in time,
-    transform scan points to world frame, and compute min distance
-    from any robot vertex to any scan point.
+    Compute min footprint-to-obstacle distance at each odom timestep.
+
+    For gridmap mode: obstacle_pts is static, uses KD-tree (fast).
+    For scan mode: if scan_raw is provided, uses per-timestep scan
+                   transformed to world frame (more accurate).
 
     Returns: list of (t, min_dist)
     """
-    if len(scan_data) == 0:
+    if obstacle_pts is None and scan_raw is None:
         return []
 
-    scan_times = np.array([s[0] for s in scan_data])
     results = []
 
-    for ts, x, y, yaw, *_ in odom_data:
-        # Find nearest scan
-        idx = np.argmin(np.abs(scan_times - ts))
-        if abs(scan_times[idx] - ts) > max_scan_age:
-            continue
-
-        scan_world = scan_to_world(scan_data[idx][1], x, y, yaw)
-        verts = robot_vertices(x, y, yaw, L, W)
-
-        # Min distance from any vertex to any scan point
-        min_d = float('inf')
-        for v in verts:
-            dists = np.sqrt((scan_world[:, 0] - v[0])**2 +
-                            (scan_world[:, 1] - v[1])**2)
-            min_d = min(min_d, np.min(dists))
-
-        results.append((ts, min_d))
+    if scan_raw is not None:
+        # Scan mode: per-timestep clearance using matched scans
+        scan_times = np.array([s[0] for s in scan_raw])
+        for ts, x, y, yaw, *_ in odom_data:
+            idx = np.argmin(np.abs(scan_times - ts))
+            if abs(scan_times[idx] - ts) > max_scan_age:
+                continue
+            scan_world = scan_to_world(scan_raw[idx][1], x, y, yaw)
+            verts = robot_vertices(x, y, yaw, L, W)
+            min_d = float('inf')
+            for v in verts:
+                dists = np.sqrt((scan_world[:, 0] - v[0])**2 +
+                                (scan_world[:, 1] - v[1])**2)
+                min_d = min(min_d, np.min(dists))
+            results.append((ts, min_d))
+    else:
+        # Gridmap mode: static obstacle points, use KD-tree for speed
+        from scipy.spatial import cKDTree
+        tree = cKDTree(obstacle_pts)
+        for ts, x, y, yaw, *_ in odom_data:
+            verts = robot_vertices(x, y, yaw, L, W)
+            dists, _ = tree.query(verts)
+            results.append((ts, np.min(dists)))
 
     return results
 
@@ -249,21 +322,11 @@ def compute_footprint_to_scan_clearance(odom_data, scan_data, L, W,
 # Figure 1: Trajectory progression
 # =============================================================================
 
-def plot_trajectory_progression(data, L, W, step_interval=100,
-                                 polytope_steps=None, show_scan=True,
-                                 show_exec_path=False, ax=None):
+def plot_trajectory_progression(data, L, W, mode='scan', step_interval=100,
+                                 polytope_steps=None, show_obstacles=True,
+                                 show_ref_path=False, ax=None):
     """
     Trajectory with footprint rectangles and (optionally) polytopes.
-
-    Args:
-        data:           dict from load_bag
-        L, W:           robot length, width
-        step_interval:  draw footprint every N odom messages
-        polytope_steps: list of odom indices where to overlay polytopes
-                        (None = same as footprint steps)
-        show_scan:      overlay accumulated scan points (transformed to world)
-        show_exec_path: overlay the local planner path
-        ax:             matplotlib axis (created if None)
     """
     odom = data['odom']
     traj = np.array([(o[1], o[2]) for o in odom])
@@ -274,27 +337,38 @@ def plot_trajectory_progression(data, L, W, step_interval=100,
     else:
         fig = ax.get_figure()
 
-    # Scan points (transformed to world frame)
-    if show_scan and len(data['scan']) > 0:
-        odom_times = np.array([o[0] for o in odom])
-        all_world_pts = []
-        for ts, scan_pts in data['scan']:
-            # Find nearest odom for pose
-            oidx = np.argmin(np.abs(odom_times - ts))
-            _, ox, oy, oyaw = odom[oidx][0], odom[oidx][1], odom[oidx][2], odom[oidx][3]
-            world_pts = scan_to_world(scan_pts, ox, oy, oyaw)
-            all_world_pts.append(world_pts)
-        all_world_pts = np.vstack(all_world_pts)
-        ax.scatter(all_world_pts[:, 0], all_world_pts[:, 1], s=0.5, c='purple',
-                   alpha=0.3, edgecolors='none', rasterized=True, zorder=1)
+    # --- Background: obstacles ---
+    if show_obstacles:
+        if mode == 'gridmap' and data['gridmap'] is not None:
+            # Render gridmap as image
+            gm = data['gridmap']
+            grid = gm['data'].astype(float)
+            ox, oy = gm['origin']
+            res = gm['resolution']
+            w, h = gm['width'], gm['height']
+
+            # Map values: -1=unknown, 0=free, 100=occupied
+            display = np.ones_like(grid) * 0.95  # unknown = light gray
+            display[grid == 0] = 1.0              # free = white
+            display[grid > 50] = 0.0              # occupied = black
+
+            extent = [ox, ox + w * res, oy, oy + h * res]
+            ax.imshow(display, cmap='gray', origin='lower', extent=extent,
+                      vmin=0, vmax=1, zorder=0, alpha=0.8)
+
+        elif data['obstacle_pts'] is not None:
+            # Scan: scatter accumulated points
+            pts = data['obstacle_pts']
+            ax.scatter(pts[:, 0], pts[:, 1], s=0.5, c='purple',
+                       alpha=0.3, edgecolors='none', rasterized=True, zorder=1)
 
     # Trajectory line
     ax.plot(traj[:, 0], traj[:, 1], 'b-', linewidth=2, zorder=3,
             label='Trajectory')
 
-    # Reference path (latest execute_path)
-    if show_exec_path and len(data['exec_path']) > 0:
-        last_path = data['exec_path'][-1][1]
+    # Reference path (latest)
+    if show_ref_path and len(data['ref_path']) > 0:
+        last_path = data['ref_path'][-1][1]
         ax.plot(last_path[:, 0], last_path[:, 1], 'g--', linewidth=1.5,
                 alpha=0.7, label='Reference path', zorder=2)
 
@@ -320,14 +394,12 @@ def plot_trajectory_progression(data, L, W, step_interval=100,
         if abs(poly_times[pidx] - t_odom) > 0.2:
             continue
 
-        # Use robot position as interior point (guaranteed inside by FIRI)
         robot_pos = np.array([traj[idx, 0], traj[idx, 1]])
         _, A, b, n_act = data['polytopes'][pidx]
         verts = polytope_to_polygon(A, b, robot_pos, n_active=n_act)
 
-        # Time-varying alpha: faint early, stronger late
         progress = i / max(len(polytope_steps) - 1, 1)
-        poly_alpha = 0.05 + 0.10 * progress
+        poly_alpha = 0.08 + 0.20 * progress
 
         if verts is not None:
             poly_patch = plt.Polygon(verts, alpha=poly_alpha, facecolor='green',
@@ -339,16 +411,15 @@ def plot_trajectory_progression(data, L, W, step_interval=100,
 
     print(f"  Polytopes drawn: {n_poly_drawn}, failed: {n_poly_failed}")
 
-    # Footprint rectangles with time-varying alpha
+    # Footprint rectangles with time-varying alpha (zorder=4, above polytopes)
     for i, idx in enumerate(foot_indices):
         x, y, yaw = traj[idx, 0], traj[idx, 1], yaws[idx]
-
         progress = i / max(len(foot_indices) - 1, 1)
-        foot_alpha = 0.7 + 0.3 * progress
+        foot_alpha = 0.3 + 0.7 * progress
 
         rect = patches.Rectangle((-L/2, -W/2), L, W,
                                   facecolor='orange', edgecolor='darkorange',
-                                  alpha=foot_alpha, linewidth=1)
+                                  alpha=foot_alpha, linewidth=1, zorder=4)
         t = mtransforms.Affine2D().rotate(yaw).translate(x, y) + ax.transData
         rect.set_transform(t)
         ax.add_patch(rect)
@@ -365,18 +436,12 @@ def plot_trajectory_progression(data, L, W, step_interval=100,
 # Figure 2: Time-series (clearance + CBF slack)
 # =============================================================================
 
-def plot_timeseries(data, L, W, footprint_scan_clearance=None, ax_h=None, ax_s=None):
+def plot_timeseries(data, footprint_clearance=None, ax_h=None, ax_s=None):
     """
     Two-subplot time-series figure.
 
     Top:    min_h (footprint-to-polytope) and footprint-to-obstacle clearance
     Bottom: min_slack (CBF activity at k=0)
-
-    Args:
-        data:                       dict from load_bag
-        L, W:                       robot dimensions
-        footprint_scan_clearance:   precomputed list of (t, min_dist), or None to compute
-        ax_h, ax_s:                 axes for top/bottom (created if None)
     """
     cbf = data['cbf']
     if len(cbf) == 0:
@@ -388,7 +453,6 @@ def plot_timeseries(data, L, W, footprint_scan_clearance=None, ax_h=None, ax_s=N
     min_h = cbf_arr[:, 1]
     min_slack = cbf_arr[:, 2]
 
-    # Normalize time to start at 0
     t0 = t_cbf[0]
     t_cbf_rel = t_cbf - t0
 
@@ -402,8 +466,8 @@ def plot_timeseries(data, L, W, footprint_scan_clearance=None, ax_h=None, ax_s=N
     ax_h.plot(t_cbf_rel, min_h, 'b-', linewidth=1.5,
               label='Footprint–polytope (MPC)')
 
-    if footprint_scan_clearance is not None and len(footprint_scan_clearance) > 0:
-        fc = np.array(footprint_scan_clearance)
+    if footprint_clearance is not None and len(footprint_clearance) > 0:
+        fc = np.array(footprint_clearance)
         ax_h.plot(fc[:, 0] - t0, fc[:, 1], 'r-', linewidth=1, alpha=0.7,
                   label='Footprint–obstacle (true)')
 
@@ -425,7 +489,7 @@ def plot_timeseries(data, L, W, footprint_scan_clearance=None, ax_h=None, ax_s=N
 
 
 # =============================================================================
-# Solve time statistics
+# Statistics (printed)
 # =============================================================================
 
 def print_solve_time_stats(data):
@@ -466,6 +530,29 @@ def print_cbf_stats(data):
         print("  WARNING: negative slack detected — CBF constraint was violated!")
 
 
+def print_polytope_stats(data):
+    """Print polytope halfplane count statistics."""
+    polys = data['polytopes']
+    if len(polys) == 0:
+        print("No polytope data in bag")
+        return
+
+    n_planes = np.array([p[3] for p in polys])
+    print(f"\nPolytope statistics ({len(polys)} polytopes):")
+    print(f"  Mean:   {np.mean(n_planes):.1f} halfplanes")
+    print(f"  Std:    {np.std(n_planes):.1f}")
+    print(f"  Median: {np.median(n_planes):.0f}")
+    print(f"  Max:    {np.max(n_planes)}")
+    print(f"  Min:    {np.min(n_planes)}")
+
+    # Distribution
+    unique, counts = np.unique(n_planes, return_counts=True)
+    print(f"  Distribution:")
+    for u, c in zip(unique, counts):
+        pct = 100 * c / len(n_planes)
+        print(f"    {int(u):3d} planes: {c:4d} ({pct:5.1f}%)")
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -473,39 +560,43 @@ def print_cbf_stats(data):
 def main():
     parser = argparse.ArgumentParser(description='MPC-CBF Rosbag Analysis')
     parser.add_argument('bag', help='Path to rosbag')
-    parser.add_argument('--step', type=int, default=1000,
+    parser.add_argument('--mode', choices=['scan', 'gridmap'], default='scan',
+                        help='Data source: scan (Gazebo/LiDAR) or gridmap')
+    parser.add_argument('--step', type=int, default=100,
                         help='Footprint rectangle interval (odom messages)')
-    parser.add_argument('--no-scan', action='store_true',
-                        help='Skip LaserScan loading (faster)')
     parser.add_argument('--robot-length', type=float, default=0.9,
                         help='Robot length [m]')
     parser.add_argument('--robot-width', type=float, default=0.45,
                         help='Robot width [m]')
     parser.add_argument('--poly-steps', type=int, nargs='*', default=None,
                         help='Specific odom indices for polytope overlay')
+    parser.add_argument('--no-obstacles', action='store_true',
+                        help='Skip obstacle loading (faster)')
     parser.add_argument('--save', action='store_true',
                         help='Save figures as PDF and PNG')
     args = parser.parse_args()
 
     bag_name = os.path.splitext(os.path.basename(args.bag))[0]
-    load_scan = not args.no_scan
     L, W = args.robot_length, args.robot_width
 
     # Load data
-    data = load_bag(args.bag, load_scan=load_scan)
+    data = load_bag(args.bag, mode=args.mode)
 
     # Print statistics
     print_solve_time_stats(data)
     print_cbf_stats(data)
+    print_polytope_stats(data)
 
-    # Compute footprint-to-obstacle clearance (offline from scan)
+    # Compute footprint-to-obstacle clearance
     fc_clearance = None
-    if load_scan and len(data['scan']) > 0:
-        print("\nComputing footprint-to-obstacle clearance from scan data...")
-        # Downsample odom to ~10 Hz for speed (match MPC rate)
-        odom_ds = data['odom'][::10]
-        fc_clearance = compute_footprint_to_scan_clearance(
-            odom_ds, data['scan'], L, W)
+    if not args.no_obstacles and data['obstacle_pts'] is not None:
+        print("\nComputing footprint-to-obstacle clearance...")
+        odom_ds = data['odom'][::10]  # ~10 Hz
+
+        scan_raw = data.get('_scan_raw', None) if args.mode == 'scan' else None
+        fc_clearance = compute_footprint_clearance(
+            odom_ds, data['obstacle_pts'], L, W, scan_raw=scan_raw)
+
         print(f"  Computed {len(fc_clearance)} clearance values")
         if len(fc_clearance) > 0:
             fc_arr = np.array(fc_clearance)
@@ -514,10 +605,11 @@ def main():
     # Figure 1: Trajectory progression
     fig1, ax1 = plot_trajectory_progression(
         data, L, W,
+        mode=args.mode,
         step_interval=args.step,
         polytope_steps=args.poly_steps,
-        show_scan=load_scan,
-        show_exec_path=True
+        show_obstacles=not args.no_obstacles,
+        show_ref_path=True,
     )
     ax1.set_title(f'Trajectory: {bag_name}')
     if args.save:
@@ -526,8 +618,7 @@ def main():
         print(f"Saved: {bag_name}_trajectory.pdf/png")
 
     # Figure 2: Time-series
-    fig2, ax_h, ax_s = plot_timeseries(data, L, W,
-                                        footprint_scan_clearance=fc_clearance)
+    fig2, ax_h, ax_s = plot_timeseries(data, footprint_clearance=fc_clearance)
     if fig2 is not None:
         if args.save:
             fig2.savefig(f'{bag_name}_timeseries.pdf', dpi=300)
@@ -539,6 +630,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-# python3 plot_mpc_cbf_bag.py 2026-03-20-15-04-21.bag
