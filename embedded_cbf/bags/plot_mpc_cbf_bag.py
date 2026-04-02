@@ -562,7 +562,7 @@ def main():
     parser.add_argument('bag', help='Path to rosbag')
     parser.add_argument('--mode', choices=['scan', 'gridmap'], default='scan',
                         help='Data source: scan (Gazebo/LiDAR) or gridmap')
-    parser.add_argument('--step', type=int, default=100,
+    parser.add_argument('--step', type=int, default=1000,
                         help='Footprint rectangle interval (odom messages)')
     parser.add_argument('--robot-length', type=float, default=0.9,
                         help='Robot length [m]')

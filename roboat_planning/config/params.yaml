@@ -15,9 +15,9 @@ roboat_planning:
   _sensorCloudTimeout: 0.5
 
   # Alternative Path Params
-  _samplingTipMargin: 0.5 # 1.0
-  _samplingOutMargin: 0.2 # 1.0 
+  _samplingTipMargin: 0.5 #0.5 # 1.0
+  _samplingOutMargin: 0.1 #0.2 # 1.0 
   _pathResolution: 0.1
   _maxPathDistance: 7.0
-  _rollOutDensity: 0.1
-  _rollOutNumber: 15
+  _rollOutDensity: 0.05
+  _rollOutNumber: 40

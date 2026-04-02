@@ -1,13 +1,13 @@
 <launch>
 
-    <arg name="record" default="false"/>
+    <arg name="record" default="true"/>
 
     <!-- Include MPC-CBF node -->
     <include file="$(find embedded_cbf)/launch/mpc_cbf_path.launch">
-        <!-- <arg name="Q_psi"         value="0.1"/> -->
+        <arg name="Q_psi"         value="0.1"/>
         <!-- <arg name="Q_yaw"       value="0.1"/> -->
         <!-- <arg name="safety_margin" value="0.1"/> -->
-        <!-- <arg name="N_cbf"         value="10"/> -->
+        <arg name="N_cbf"         value="20"/>
         <!-- <arg name="lookahead_dist" value="0.5"/> -->
     </include>
 

@@ -153,10 +153,12 @@ def plot_panel(ax, data, L, W, mode, step_interval=1000,
             bbox=dict(boxstyle='round,pad=0.15', facecolor='white',
                       edgecolor='none', alpha=0.8))
 
-    ax.set_xlabel('x [m]')
-    ax.set_ylabel('y [m]')
+    # ax.set_xlabel('x [m]')
+    # ax.set_ylabel('y [m]')
     ax.set_aspect('equal')
-    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.grid(False, alpha=0.2, linewidth=0.5)
+    ax.set_xticks([])
+    ax.set_yticks([])
 
     # Tight axis limits with small margin
     margin = 1.0
@@ -262,7 +264,7 @@ def main():
                label='(b)')
 
     # Remove redundant y-label on right panel
-    ax_b2.set_ylabel('')
+    # ax_b2.set_ylabel('')
 
     if args.xlim_a: ax_a2.set_xlim(args.xlim_a)
     if args.ylim_a: ax_a2.set_ylim(args.ylim_a)
