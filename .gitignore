@@ -1,0 +1,30 @@
+# ROS Catkin build artifacts
+build/
+devel/
+install/
+.catkin_tools/
+.catkin_workspace
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# ROS bag files
+*.bag
+
+# Generated plot/media outputs (scoped to bags/ to preserve map PNGs elsewhere)
+embedded_cbf/bags/*.pdf
+embedded_cbf/bags/*.png
+embedded_cbf/bags/*.eps
+embedded_cbf/bags/*.mp4
+embedded_cbf/bags/PiP-CBF bags/
+
+# Vim swap files
+*.swp
+*.swo
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
