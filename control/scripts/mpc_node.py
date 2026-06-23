@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
+import time
 import rospy
 import numpy as np
 
 
-from mpc_rockit_core import MPCController
+# from mpc_rockit_core import MPCController
+from mpc_opti_chocbf_dcbf_core import MPCController
 from roboat_core.msg import Force
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Float64, Bool
 from tf.transformations import euler_from_quaternion
 from path import SinePath, StraightLinePath
 from obstacle_detector.msg import Buoy, BuoyArray
+from control.msg import AlphaArray
 
 from scipy.optimize import minimize
 
@@ -29,6 +33,8 @@ class MPCNode:
         self.initial_guess_control = np.zeros(self.mpc.nu)
 
         self.cmd_pub = rospy.Publisher("/mpc_force", Force, queue_size=1)
+        self.solve_time_pub = rospy.Publisher("/mpc_status/solve_time_ms", Float64, queue_size=1)
+        self.success_pub = rospy.Publisher("/mpc_status/success", Bool, queue_size=1)
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
 
         # Handling obstacles
@@ -41,6 +47,11 @@ class MPCNode:
         self.obstacle_radius = np.ones(num_obstacles)*mpc_p["dummy_radius"]
         rospy.Subscriber("/buoy_array", BuoyArray, self.buoy_array_cb)
 
+        # CBF alpha gains, published by alpha_node; defaulted until the first message arrives
+        self.alpha1 = np.ones(num_obstacles)
+        self.alpha2 = np.ones(num_obstacles)
+        rospy.Subscriber("/cbf_alphas", AlphaArray, self.alpha_cb)
+
         self.path_pub = rospy.Publisher(
             "/desired_path",
             Path,
@@ -52,8 +63,9 @@ class MPCNode:
 
         # Control loop at 10 Hz
         self.current_state = None
+        self.control_period = mpc_p['dt']
         self.control_timer = rospy.Timer(
-        rospy.Duration(0.1),   # 10 Hz control
+        rospy.Duration(self.control_period),
         self.control_loop
         )
 
@@ -95,6 +107,10 @@ class MPCNode:
             self.obstacle_radius[i] = r
             
         
+    def alpha_cb(self, msg):
+        self.alpha1 = np.array(msg.alpha1)
+        self.alpha2 = np.array(msg.alpha2)
+
     def odom_cb(self, msg):
         self.current_state = self.odom_to_state(msg)
         # u = self.mpc.solve(x, [1000, 1000], [1000, 1000], 
@@ -144,18 +160,33 @@ class MPCNode:
             return
         print("Current state for MPC:", self.current_state)
         print("Current obstacles for MPC:", list(zip(self.obstacle_x, self.obstacle_y, self.obstacle_radius)))
-        u, U, X = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y, 
-                               self.obstacle_radius, 0.5*np.ones(self.mpc.num_obs), 0.5*np.ones(self.mpc.num_obs),
-                               self.initial_guess_state, self.initial_guess_control)  
-        self.initial_guess_state = X 
-        self.initial_guess_control = U 
-        print("Control output from MPC:", u)                              
+
+        t0 = time.perf_counter()
+        try:
+            u, U, X = self.mpc.solve(self.current_state, self.obstacle_x, self.obstacle_y,
+                                   self.obstacle_radius, self.alpha1, self.alpha2,
+                                   self.initial_guess_state, self.initial_guess_control)
+        except Exception as e:
+            solve_time = time.perf_counter() - t0
+            rospy.logwarn(f"MPC solve failed after {solve_time*1000:.1f} ms: {e}")
+            self.publish_status(solve_time, success=False)
+            return
+        solve_time = time.perf_counter() - t0
+
+        self.initial_guess_state = X
+        self.initial_guess_control = U
+        print("Control output from MPC:", u)
         self.publish_cmd(u)
+        self.publish_status(solve_time, success=True)
 
     def publish_cmd(self, u):
         cmd_msg = Force()
         cmd_msg.data = u
         self.cmd_pub.publish(cmd_msg)
+
+    def publish_status(self, solve_time, success):
+        self.solve_time_pub.publish(Float64(solve_time * 1000.0))
+        self.success_pub.publish(Bool(success))
 
     def load_params(self):
         model = rospy.get_param("parameters_model")

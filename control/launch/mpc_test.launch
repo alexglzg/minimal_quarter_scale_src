@@ -2,11 +2,21 @@
     <!-- Load path parameters (global for simplicity) -->
     <rosparam file="$(find control)/config/parameters.yaml" command="load" />
 
+    <!-- Publishes per-obstacle CBF alpha gains consumed by mpc_node -->
+    <node pkg="control"
+          type="alpha_node.py"
+          name="alpha_node"
+          output="screen">
+    </node>
+
     <!-- Start MPC node (only subscribes to odom for now) -->
     <node pkg="control"
           type="mpc_node.py"
           name="mpc_node"
           output="screen">
     </node>
+
+    <!-- Single dashboard window with live numeric charts for MPC computation time and solver status -->
+    <node name="mpc_status_dashboard" pkg="control" type="mpc_status_dashboard.py" />
     
 </launch>

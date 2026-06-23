@@ -1,6 +1,7 @@
 FROM osrf/ros:noetic-desktop-full
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DISABLE_ROS1_EOL_WARNINGS=1
 
 # Install basic dependencies
 RUN apt-get update && apt-get install -y \

@@ -31,7 +31,7 @@ class MPCController:
         r = ocp.state()
         s = ocp.state()
 
-        # Defince controls
+        # Define controls
         u1 = ocp.control()
         u2 = ocp.control()
         u3 = ocp.control()
@@ -66,7 +66,7 @@ class MPCController:
         ocp.set_der(u, (-d11/m11*u+u1/(m11)+u2/(m11)))
         ocp.set_der(v, (-d22/m22*v+u3/(m22)+u4/(m22)))
         ocp.set_der(r, (-d33/m33*r+aa/(2*(m33))*u1-aa/(2*(m33))*u2+bb/(2*(m33))*u3-bb/(2*(m33))*u4))
-        ocp.set_der(s, u)
+        ocp.set_der(s, u) # 
 
         # Lagrange objective
         Qye = parameters_mpc["Qye"]

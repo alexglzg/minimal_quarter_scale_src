@@ -23,10 +23,10 @@
 
     <node  name="rviz" pkg="rviz" type="rviz" args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz" />
 
-    <!-- <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
-    </include> -->
+    <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
+    </include>
     
-    <!-- <include file="$(find quarterscalesimulation)/launch/currents.launch">
-    </include> -->
+    <include file="$(find quarterscalesimulation)/launch/currents.launch">
+    </include>
 
 </launch>

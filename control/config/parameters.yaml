@@ -9,13 +9,15 @@ parameters_model:
   bb: 0.9
   max_force_limit: 6
   u_ref: 0.3
+  ego_length: 0.9
+  ego_width: 0.45
 
 
 parameters_mpc:
   nx: 7                  
   nu: 4                   
-  Tf: 4                   
-  Nhor: 40
+  Tf: 1                   
+  Nhor: 10
   dt: 0.1
   Qye: 20.0
   Qr: 0.1
@@ -25,6 +27,10 @@ parameters_mpc:
   dummy_x: 1000.0
   dummy_y: 1000.0
   dummy_radius: 0.1
+  cbf_type: combo_chocbf_dcbf
+  adaptive: false
+  solver: fatrop
+
 
 # parameters_scenario:
 #   num_obs: 2
@@ -34,9 +40,12 @@ parameters_mpc:
 #   obstacle_a: [0.8, 0.8]
 #   obstacle_b: [0.5, 0.5]
 
-# parameters_cbf:
-#   alpha1: 1.0
-#   alpha2: 1.0
+parameters_alpha:
+  alpha1_min: 0.3
+  alpha1_max: 0.3
+  alpha2_min: 0.3
+  alpha2_max: 0.3
+  update_rate: 10.0   # Hz, how often alpha_node resamples and republishes
 
 path:
   type: sine

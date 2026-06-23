@@ -24,7 +24,10 @@ class FreeBuoySimulator:
         self.M, self.D = self.compute_buoy_model()
 
         # State: [x, y, psi, u, v, r]
-        self.state = np.array(initial_state).reshape(6,-1)
+        # self.state = np.array(initial_state).reshape(6,-1)
+
+        # State: [x, y, u, v] since it is round
+        self.state = np.array(initial_state).reshape(4,-1)
 
         # Publisher of the buoy state
         self.odom_pub = rospy.Publisher(f"/{name}/odometry", Odometry, queue_size=10)
@@ -113,24 +116,26 @@ class FreeBuoySimulator:
     def update(self, event):
         # print("Updating buoy state...")
         dt = rospy.get_time() - self.t0
+        # print(dt)
         self.t0 = rospy.get_time()
 
         # Unpack state
-        psi = self.state[2]
-        u = self.state[3]
-        v = self.state[4]
-        r = self.state[5]
+        # psi = self.state[2]
+        u = self.state[2]
+        v = self.state[3]
+        # r = self.state[5]
 
         # Compute the derivatives using the equations of motion
-        nedx_dot = np.cos(psi) * u - np.sin(psi) * v
-        nedy_dot = np.sin(psi) * u + np.cos(psi) * v
-        psi_dot = r
+        nedx_dot = u
+        nedy_dot = v
+        # psi_dot = r
         u_dot = -self.D[0,0]/self.M[0,0] * (u - self.nu_u) - (self.delta_x + self.F_body[0]) / self.M[0,0]
         v_dot = -self.D[1,1]/self.M[1,1] * (v - self.nu_v) - (self.delta_y + self.F_body[1]) / self.M[1,1]
-        r_dot = -self.D[2,2]/self.M[2,2] * r - self.delta_theta / self.M[2,2]
+        # print(self.delta_theta)
+        # r_dot = -self.D[2,2]/self.M[2,2] * r - self.delta_theta / self.M[2,2]
 
         # Update state using Euler integration
-        self.state += np.array([nedx_dot, nedy_dot, psi_dot, u_dot, v_dot, r_dot]) * dt
+        self.state += np.array([nedx_dot, nedy_dot, u_dot, v_dot]) * dt
 
         # Publish the state as an Odometry message
         odom_msg = Odometry()
@@ -139,11 +144,11 @@ class FreeBuoySimulator:
         odom_msg.pose.pose.position.x = self.state[0,0]
         odom_msg.pose.pose.position.y = -self.state[1,0]
         odom_msg.pose.pose.position.z = 0.0
-        quat = quaternion_from_euler(0, 0, -self.state[2,0])
+        quat = quaternion_from_euler(0, 0, 0)
         odom_msg.pose.pose.orientation = Quaternion(*quat)
-        odom_msg.twist.twist.linear.x = self.state[3,0]
-        odom_msg.twist.twist.linear.y = -self.state[4,0]
-        odom_msg.twist.twist.angular.z = -self.state[5,0]
+        odom_msg.twist.twist.linear.x = self.state[2,0]
+        odom_msg.twist.twist.linear.y = -self.state[3,0]
+        odom_msg.twist.twist.angular.z = 0
         self.odom_pub.publish(odom_msg)
 
         # self.publish_marker()
@@ -237,12 +242,12 @@ def main():
             odom_msg.pose.pose.position.y = -buoy.state[1,0]
             odom_msg.pose.pose.position.z = 0.0
 
-            quat = quaternion_from_euler(0, 0, -buoy.state[2,0])
+            quat = quaternion_from_euler(0, 0, 0)
             odom_msg.pose.pose.orientation = Quaternion(*quat)
 
-            odom_msg.twist.twist.linear.x = buoy.state[3,0]
-            odom_msg.twist.twist.linear.y = -buoy.state[4,0]
-            odom_msg.twist.twist.angular.z = -buoy.state[5,0]
+            odom_msg.twist.twist.linear.x = buoy.state[2,0]
+            odom_msg.twist.twist.linear.y = -buoy.state[3,0]
+            odom_msg.twist.twist.angular.z = 0
             
             buoy_msg.odom = odom_msg
             
@@ -300,7 +305,7 @@ def main():
             angle = np.arctan2(buoy.F_body[1], buoy.F_body[0]) # angle of the force vector
             quat = quaternion_from_euler(0, 0, angle)
             force_marker.pose.orientation = Quaternion(*quat)
-            marker_array.markers.append(force_marker)
+            # marker_array.markers.append(force_marker)
 
         # Publish both arrays
         buoy_array_pub.publish(array_msg)
