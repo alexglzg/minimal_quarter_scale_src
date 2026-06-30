@@ -199,8 +199,8 @@ public:
     void time_step()
     {
         std::normal_distribution<float> dist_wF(mean_wF, stddev_wF);
-        std::normal_distribution<float> dist_wN(mean_wN, stddev_dF);
-        std::normal_distribution<float> dist_dF(mean_dF, stddev_wN);
+        std::normal_distribution<float> dist_wN(mean_wN, stddev_wN);
+        std::normal_distribution<float> dist_dF(mean_dF, stddev_dF);
         std::normal_distribution<float> dist_dN(mean_dN, stddev_dN);
 
         wF = dist_wF(generator_wF);
