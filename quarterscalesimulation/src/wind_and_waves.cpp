@@ -65,8 +65,12 @@ public:
 
     float dF;
     float dF_dot_last;
+    float dF_min;
+    float dF_max;
     float dN;
     float dN_dot_last;
+    float dN_min;
+    float dN_max;
 
     float wF;
     float mean_wF;
@@ -130,6 +134,10 @@ public:
         static const float r_beta_wind = 0.0;
         static const float r_V_wind = 5.11;
         static const float r_scale_factor = 1.0;
+        static const float r_dF_min = -5.0;
+        static const float r_dF_max = 5.0;
+        static const float r_dN_min = -5.0;
+        static const float r_dN_max = 5.0;
 
         n.param("wind_and_waves/beta_wave", beta_wave, r_beta_wave);
         n.param("wind_and_waves/stddev_wF", stddev_wF, r_stddev_wF);
@@ -139,6 +147,10 @@ public:
         n.param("wind_and_waves/beta_wind", beta_wind, r_beta_wind);
         n.param("wind_and_waves/V_wind", V_wind, r_V_wind);
         n.param("wind_and_waves/scale_factor", scale_factor, r_scale_factor);
+        n.param("wind_and_waves/dF_min", dF_min, r_dF_min);
+        n.param("wind_and_waves/dF_max", dF_max, r_dF_max);
+        n.param("wind_and_waves/dN_min", dN_min, r_dN_min);
+        n.param("wind_and_waves/dN_max", dN_max, r_dN_max);
 
         psi = 0.0;
         u = 0.0;
@@ -219,6 +231,7 @@ public:
         xF1_dot_last = xF1_dot;
 
         dF = integral_step * (dF_dot + dF_dot_last)/2 + dF;
+        dF = std::min(std::max(dF, dF_min), dF_max);
         dF_dot_last = dF_dot;
 
         F_wave = (xF2 + dF)*scale_factor;
@@ -231,6 +244,7 @@ public:
         xN1_dot_last = xN1_dot;
 
         dN = integral_step * (dN_dot + dN_dot_last)/2 + dN;
+        dN = std::min(std::max(dN, dN_min), dN_max);
         dN_dot_last = dN_dot;
 
         N_wave = (xN2 + dN)*scale_factor;
