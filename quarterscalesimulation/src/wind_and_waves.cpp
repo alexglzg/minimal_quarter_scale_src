@@ -221,7 +221,7 @@ public:
         dN_dot = dist_dN(generator_dN);
 
         U = std::pow(u*u + v*v, 0.5);
-        we = std::abs(w0 - (w0*w0/g)*U*std::cos(beta_wave));
+        we = std::abs(w0 - (w0*w0/g)*U*std::cos(beta_wave - psi));
 
         xF2_dot = -we*we*xF1 - 2*lambda*we*xF2 + Kw*wF;
         xF2 = integral_step * (xF2_dot + xF2_dot_last)/2 + xF2;
