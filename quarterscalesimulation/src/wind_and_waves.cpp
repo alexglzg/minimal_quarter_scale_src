@@ -152,6 +152,11 @@ public:
         n.param("wind_and_waves/dN_min", dN_min, r_dN_min);
         n.param("wind_and_waves/dN_max", dN_max, r_dN_max);
 
+        generator_wF.seed(std::random_device{}());  // seed the random number generator with a random device, to avoid that the same numbers are generated for all quantities
+        generator_dF.seed(std::random_device{}());
+        generator_wN.seed(std::random_device{}());
+        generator_dN.seed(std::random_device{}());
+
         psi = 0.0;
         u = 0.0;
         v = 0.0;
