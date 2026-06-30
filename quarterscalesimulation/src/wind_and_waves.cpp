@@ -275,7 +275,7 @@ public:
 
         X_wind = 0.5*rho*V_rw*V_rw*CX*AFW*scale_factor;
         Y_wind = 0.5*rho*V_rw*V_rw*CY*ALW*scale_factor;
-        N_wind = 0.5*rho*V_rw*V_rw*CN*AFW*LOA*scale_factor;
+        N_wind = 0.5*rho*V_rw*V_rw*CN*ALW*LOA*scale_factor;
 
         delta_x = X_wave + X_wind;
         delta_y = Y_wave + Y_wind;
