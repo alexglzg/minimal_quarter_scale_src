@@ -258,7 +258,7 @@ public:
         u_rw = u - u_w;
         v_rw = v - v_w;
 
-        gamma_rw = std::atan2(v_rw,u_rw);
+        gamma_rw = -std::atan2(v_rw,u_rw);
         V_rw = std::pow(u_rw*u_rw + v_rw*v_rw, 0.5);
 
         if (std::abs(gamma_rw) > 1.5708){
@@ -269,7 +269,7 @@ public:
         }
         CDl = CDlaf*AFW/ALW;
 
-        CX = CDlaf * std::cos(gamma_rw) / ( 1 - ((delta_wind /2) * (1 - (CDl/CDt)) * (std::sin(2*gamma_rw) * std::sin(2*gamma_rw))) );
+        CX = -CDlaf * std::cos(gamma_rw) / ( 1 - ((delta_wind /2) * (1 - (CDl/CDt)) * (std::sin(2*gamma_rw) * std::sin(2*gamma_rw))) );
         CY = CDt * std::sin(gamma_rw) / ( 1 - ((delta_wind /2) * (1 - (CDl/CDt)) * (std::sin(2*gamma_rw) * std::sin(2*gamma_rw))) );
         CN = -0.18*(gamma_rw - 3.1415/2)*CY;
 
