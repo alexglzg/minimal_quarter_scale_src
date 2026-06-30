@@ -109,8 +109,8 @@ class FreeBuoySimulator:
     def current_callback(self, msg):
         V_c = msg.x # Current velocity in m/s
         beta_c = msg.theta # current direction in radians (0 means current is flowing in the positive x direction)
-        self.nu_u = V_c * np.cos(beta_c - self.state[2]) # Current velocity in surge direction
-        self.nu_v = V_c * np.sin(beta_c - self.state[2]) # Current velocity in sway direction
+        self.nu_u = V_c * np.cos(beta_c) # Current velocity in surge direction (round buoy, so no heading)
+        self.nu_v = V_c * np.sin(beta_c) # Current velocity in sway direction (round buoy, so no heading)
         # print(f"Received current: V_c={V_c}, beta_c={beta_c}, nu_u={self.nu_u}, nu_v={self.nu_v}")
 
     def update(self, event):

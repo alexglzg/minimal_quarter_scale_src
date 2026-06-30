@@ -10,21 +10,17 @@
         mass: 150.0
         initial_state: [10.0, 0.2, 0.0, 0.0]
       - name: buoy3
-        radius: 0.1
-        mass: 0.7
+        radius: 0.5
+        mass: 1.0
         initial_state: [10.0, -2.4, 0.0, 0.0]
       - name: buoy4
-        radius: 0.2
-        mass: 0.5
+        radius: 0.5
+        mass: 1.0
         initial_state: [4.0, -2.4, 0.0, 0.0]
       - name: buoy5
-        radius: 0.3
+        radius: 1.0
         mass: 2.0
         initial_state: [7.0, -1.0, 0.0, 0.0]
-      - name: buoy6
-        radius: 0.4
-        mass: 3.0
-        initial_state: [7.0, 1.0, 0.0, 0.0]
     </rosparam>
   </node>
 

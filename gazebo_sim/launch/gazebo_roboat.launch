@@ -18,13 +18,14 @@
     <!-- <node name="qs_tf2_broadcaster" type="qs_tf2_broadcaster" pkg="quarterscalesimulation" /> -->
 
     <node name="qs_sim_node" type="qs_sim_node" pkg="quarterscalesimulation" />
+    <!-- <node name="qs_lindrag_dynamics" type="qs_lindrag_dynamics" pkg="quarterscalesimulation" /> -->
 
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
 
-    <node  name="rviz" pkg="rviz" type="rviz" args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz" />
+    <node  name="rviz" pkg="rviz" type="rviz" args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz" /> 
 
-    <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
-    </include>
+    <!-- <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch">
+    </include> -->
     
     <include file="$(find quarterscalesimulation)/launch/currents.launch">
     </include>

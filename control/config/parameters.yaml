@@ -16,18 +16,18 @@ parameters_model:
 parameters_mpc:
   nx: 7                  
   nu: 4                   
-  Tf: 1                   
-  Nhor: 10
+  Tf: 2                   
+  Nhor: 20
   dt: 0.1
   Qye: 20.0
   Qr: 0.1
   Qpsi: 10.0
   Qu: 200
-  num_obstacles: 2
+  num_obstacles: 3
   dummy_x: 1000.0
   dummy_y: 1000.0
   dummy_radius: 0.1
-  cbf_type: combo_chocbf_dcbf
+  cbf_type: c_hocbf
   adaptive: false
   solver: fatrop
 
