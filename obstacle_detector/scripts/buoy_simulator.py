@@ -12,7 +12,7 @@ from scipy.optimize import fsolve
 
 class FreeBuoySimulator:
     def __init__(self, name, R, m, initial_state):
-        self.name = name.lower()
+        self.name = name
         self.R = R # radius of the buoy in meters
         self.m = m # mass of the buoy in kg
         self.rho = 1000 # Density of water in kg/m^3        
@@ -30,21 +30,27 @@ class FreeBuoySimulator:
         self.state = np.array(initial_state).reshape(4,-1)
 
         # Publisher of the buoy state
-        self.odom_pub = rospy.Publisher(f"/{name}/odometry", Odometry, queue_size=10)
+        self.odom_pub = rospy.Publisher(f"/{self.name}/odometry", Odometry, queue_size=10)
         # Publisher of the buoy marker for visualization in Rviz
-        # self.marker_pub = rospy.Publisher(f"/{name}/marker", Marker, queue_size=10)
+        # self.marker_pub = rospy.Publisher(f"/{self.name}/marker", Marker, queue_size=10)
 
-        self.marker_id = hash(name) % 1000
+        self.marker_id = hash(self.name) % 1000
         
         # Subscribers to the disturbances and currents
-        rospy.Subscriber("/roboat_disturbance", Pose2D, self.disturbance_callback)
+        # Disturbance is buoy-specific: wind_and_waves publishes a simplified
+        # wind-drag + wave-drift force per buoy on "/<name>/disturbance", since a small
+        # round buoy doesn't feel the same vessel-shaped wind force as the roboat.
+        rospy.Subscriber(f"/{self.name}/disturbance", Pose2D, self.disturbance_callback)
         rospy.Subscriber("/roboat_currents", Pose2D, self.current_callback)
 
         # Subscriber to odometry of the vessel to model interaction
         # rospy.Subscriber("odometry/filtered", Odometry, self.vessel_odometry_callback)
 
-        self.nu_u = 0.0
-        self.nu_v = 0.0
+        self.u_c = 0.0
+        self.v_c = 0.0
+        self.V_c = 0.0
+        self.beta_c = 0.0
+        self.V_c_dot = 0.0
         self.delta_x = 0.0
         self.delta_y = 0.0
         self.delta_theta = 0.0
@@ -107,11 +113,12 @@ class FreeBuoySimulator:
         # print(f"Received disturbance: delta_x={self.delta_x}, delta_y={self.delta_y}, delta_theta={self.delta_theta}")
 
     def current_callback(self, msg):
-        V_c = msg.x # Current velocity in m/s
-        beta_c = msg.theta # current direction in radians (0 means current is flowing in the positive x direction)
-        self.nu_u = V_c * np.cos(beta_c) # Current velocity in surge direction (round buoy, so no heading)
-        self.nu_v = V_c * np.sin(beta_c) # Current velocity in sway direction (round buoy, so no heading)
-        # print(f"Received current: V_c={V_c}, beta_c={beta_c}, nu_u={self.nu_u}, nu_v={self.nu_v}")
+        self.V_c = msg.x # Current velocity in m/s
+        self.beta_c = msg.theta # current direction in radians (0 means current is flowing in the positive x direction)
+        self.u_c = self.V_c * np.cos(self.beta_c) # Current velocity in surge direction (round buoy, so no heading)
+        self.v_c = self.V_c * np.sin(self.beta_c) # Current velocity in sway direction (round buoy, so no heading)
+        self.V_c_dot = msg.y # Current acceleration in m/s^2
+        # print(f"Received current: V_c={self.V_c}, beta_c={self.beta_c}, u_c={self.u_c}, v_c={self.v_c}")
 
     def update(self, event):
         # print("Updating buoy state...")
@@ -125,12 +132,19 @@ class FreeBuoySimulator:
         v = self.state[3]
         # r = self.state[5]
 
+        u_rel = u - self.u_c
+        v_rel = v - self.v_c
+
         # Compute the derivatives using the equations of motion
         nedx_dot = u
         nedy_dot = v
         # psi_dot = r
-        u_dot = -self.D[0,0]/self.M[0,0] * (u - self.nu_u) - (self.delta_x + self.F_body[0]) / self.M[0,0]
-        v_dot = -self.D[1,1]/self.M[1,1] * (v - self.nu_v) - (self.delta_y + self.F_body[1]) / self.M[1,1]
+         
+        u_rel_dot = -self.D[0,0]/self.M[0,0] * u_rel + (self.delta_x + self.F_body[0]) / self.M[0,0]
+        v_rel_dot = -self.D[1,1]/self.M[1,1] * v_rel + (self.delta_y + self.F_body[1]) / self.M[1,1]
+
+        u_dot = u_rel_dot + self.V_c_dot * np.cos(self.beta_c)
+        v_dot = v_rel_dot + self.V_c_dot * np.sin(self.beta_c)
         # print(self.delta_theta)
         # r_dot = -self.D[2,2]/self.M[2,2] * r - self.delta_theta / self.M[2,2]
 
@@ -207,8 +221,9 @@ class FreeBuoySimulator:
 def main():
     rospy.init_node("buoy_simulator")
 
-    # Get buoy list from ROS param
-    buoys_param = rospy.get_param("~buoys", [
+    # Get buoy list from the global ROS param (shared with wind_and_waves, which uses the
+    # same list to publish each buoy's simplified wind/wave force on /<name>/disturbance)
+    buoys_param = rospy.get_param("/buoys", [
         {"name": "buoy1", "radius": 0.5, "mass": 15, "initial_state": [5.0, 5.0, 0.0, 0.0, 0.0, 0.0]},
         {"name": "buoy2", "radius": 0.8, "mass": 20, "initial_state": [10.0, 10.0, 0.0, 0.0, 0.0, 0.0]}
     ])

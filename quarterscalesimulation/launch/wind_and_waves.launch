@@ -9,8 +9,13 @@
     <param name = "stddev_wN" value = "0.1" />
     <param name = "stddev_dN" value = "0.05" />
     <param name = "beta_wind" value = "0.0" />
-    <param name = "V_wind" value = "2.05" />
-    <param name = "scale_factor" value = "1.0" />
+    <param name = "V_wind_knots" value = "3.98" /> <!-- ~2.05 m/s, previous default -->
+    <param name = "scale_factor_wind" value = "1.0" />
+    <param name = "scale_factor_wave" value = "1.0" />
+    <param name = "buoy_stddev_dF" value = "0.05" />
+    <param name = "buoy_dF_min" value = "-2.0" />
+    <param name = "buoy_dF_max" value = "2.0" />
+    <param name = "buoy_CD" value = "0.5" />
     </node>
 
 </launch>

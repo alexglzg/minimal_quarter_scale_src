@@ -1,28 +1,30 @@
 <launch>
-  <node pkg="obstacle_detector" type="buoy_simulator.py" name="buoy_sim" output="screen">
-    <rosparam param="buoys">
-      - name: buoy1
-        radius: 0.9
-        mass: 4.0
-        initial_state: [4.0, 0.2, 0.0, 0.0]
-      - name: buoy2
-        radius: 0.7
-        mass: 150.0
-        initial_state: [10.0, 0.2, 0.0, 0.0]
-      - name: buoy3
-        radius: 0.5
-        mass: 1.0
-        initial_state: [10.0, -2.4, 0.0, 0.0]
-      - name: buoy4
-        radius: 0.5
-        mass: 1.0
-        initial_state: [4.0, -2.4, 0.0, 0.0]
-      - name: buoy5
-        radius: 1.0
-        mass: 2.0
-        initial_state: [7.0, -1.0, 0.0, 0.0]
-    </rosparam>
-  </node>
+  <!-- Global buoy list: single source of truth shared by buoy_simulator.py (spawns/moves
+       the buoys) and wind_and_waves (computes each buoy's simplified wind/wave force). -->
+  <rosparam param="/buoys">
+    - name: buoy1
+      radius: 0.9
+      mass: 4.0
+      initial_state: [4.0, 0.2, 0.0, 0.0]
+    - name: buoy2
+      radius: 0.7
+      mass: 150.0
+      initial_state: [10.0, 0.2, 0.0, 0.0]
+    - name: buoy3
+      radius: 0.5
+      mass: 1.0
+      initial_state: [10.0, -2.4, 0.0, 0.0]
+    - name: buoy4
+      radius: 0.5
+      mass: 1.0
+      initial_state: [4.0, -2.4, 0.0, 0.0]
+    - name: buoy5
+      radius: 1.0
+      mass: 2.0
+      initial_state: [7.0, -1.0, 0.0, 0.0]
+  </rosparam>
+
+  <node pkg="obstacle_detector" type="buoy_simulator.py" name="buoy_sim" output="screen" />
 
   <!-- Checks the boat's rectangular footprint against the buoys and publishes /collision_detected -->
   <node pkg="obstacle_detector" type="collision_checker.py" name="collision_checker" output="screen" />
