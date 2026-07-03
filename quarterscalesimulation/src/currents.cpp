@@ -71,14 +71,20 @@ public:
 
         noise_cur = dist_cur(generator_cur) * scale_factor;
 
+        float V_current_old = V_current;
+
         V_c_dot = noise_cur - mu*V_current;
         V_current = integral_step * (V_c_dot + V_c_dot_last)/2 + V_current;
         V_current = std::min(std::max(V_current, v_min), v_max);
         V_c_dot_last = V_c_dot;
 
-        disturbance.x = V_current;
-        disturbance.y = 0.0;
-        disturbance.theta = beta_current;
+        // Effective derivative of the saturated state (not the unsaturated OU model),
+        // so it reads 0 while the speed is clamped against v_min/v_max
+        float V_c_dot_eff = (V_current - V_current_old) / integral_step;
+
+        disturbance.x = V_current; //Current magnitude in m/s
+        disturbance.y = V_c_dot_eff; //Effective derivative of current magnitude in m/s^2 (0 while saturated)
+        disturbance.theta = beta_current; //Current direction in rad
 
         //Data publishing
         disturbance_pub.publish(disturbance);

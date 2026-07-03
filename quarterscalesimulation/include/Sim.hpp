@@ -42,9 +42,10 @@ private:
   double delta_y = 0.0;
   double delta_theta = 0.0;
   double V_c = 0.0;
+  double V_c_dot = 0.0;
   double beta_c = 0.0;
-  double nu_u = 0.0;
-  double nu_v = 0.0;
+  double u_c = 0.0;
+  double v_c = 0.0;
 
   ros::Publisher twist_pub;
   ros::Publisher pose_pub;

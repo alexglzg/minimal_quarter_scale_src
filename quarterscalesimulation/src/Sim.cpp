@@ -31,24 +31,72 @@ std::normal_distribution<double> distx(0.0, 0.0);
 std::normal_distribution<double> disty(0.0, 0.0);
 std::normal_distribution<double> distt(0.0, 0.0);
 
+/**
+ * Reference frames
+ * -----------------
+ * Internal simulation state (x[0..9], see state_type in operator() and Sim::state)
+ * is expressed in a NED-style ship convention:
+ *   x[0] = North position [m]
+ *   x[1] = East position [m]
+ *   x[2] = psi, heading [rad], positive CLOCKWISE from North (compass heading)
+ *   x[3] = u, surge velocity [m/s]            (body x-axis, forward)
+ *   x[4] = v, sway velocity [m/s]             (body y-axis, to starboard/right)
+ *   x[5] = r, yaw rate = dpsi/dt [rad/s], same clockwise-positive sense as psi
+ *   x[6..9] = individual thruster forces [N], held piecewise-constant between
+ *             forceCallback() updates
+ *
+ * All internal computation -- this operator(), the current/wind/wave disturbance
+ * inputs (nu_u, nu_v, delta_x, delta_y, delta_theta, all sourced from topics that
+ * are themselves computed against this same psi), and the raw pose republished on
+ * "qs_dynamics/inertial_pose" -- stays in this NED-style frame.
+ *
+ * The ROS-facing topics (filtered_pose, filtered_twist, odometry/filtered, and the
+ * /initialpose subscriber) use the standard ROS convention instead (right-handed,
+ * z-up, yaw CCW-positive about z, REP-103). Converting between the two frames
+ * requires mirroring the East axis (y -> -y) AND negating psi (and r) together:
+ * flipping one axis of a 2D frame flips its handedness, so the sign of positive
+ * rotation must flip too, or headings/yaw-rates would come out mirrored.
+ * See initialPoseCallback() (ROS -> internal) and the pose_pub/odom_pub/twist_pub
+ * blocks in the constructor (internal -> ROS) for the matching negation pairs.
+ *
+ * Current/wind/wave direction parameters (beta_c here from /roboat_currents;
+ * beta_wave, beta_wind in wind_and_waves.cpp) share the same North/East, psi
+ * convention above: each is the compass-style angle (0 = North, clockwise-positive)
+ * that the current/wind/waves flow TOWARDS -- the oceanographic sense, not the
+ * meteorological "coming from" convention. currents_callback() below rotates that
+ * vector into the body frame via (beta_c - state[2]), which is Fossen's ocean-current
+ * model; wind_and_waves.cpp applies the identical (beta - psi) pattern for wind
+ * (u_w, v_w) and waves (X_wave, Y_wave, the encounter frequency we), so all three
+ * disturbance sources stay consistent with each other and with psi. Any beta_*
+ * parameter set with the opposite ("coming from") convention will silently apply the
+ * disturbance 180 degrees off.
+ */
 void Sim::operator()(const state_type &x, state_type &dxdt, const double /* t */)
 {
-  // // velocities relative to current, used by the drag terms below
-  double u_r = x[3] - nu_u;
-  double v_r = x[4] - nu_v;
+  // velocities relative to current, used by the drag terms below
+  double u_r = x[3] - u_c;
+  double v_r = x[4] - v_c;
 
-  // model with Coriolis terms
+  double nu_r_dot[3] = {0, 0, 0};
+
+  // model with Coriolis terms, current/wind/wave disturbances, and linear drag
+  nu_r_dot[0] = 1 / m11 * (x[6] + x[7] + m22 * v_r * x[5] - d11 * u_r + delta_x);
+  nu_r_dot[1] = 1 / m22 * (x[8] + x[9] - m11 * u_r * x[5] - d22 * v_r + delta_y);
+  nu_r_dot[2] = 1 / m33 * (aa / 2 * x[6] - aa / 2 * x[7] + bb / 2 * x[8] - bb / 2 * x[9] + (m11 - m22) * u_r * v_r - d33 * x[5] + delta_theta);
+
+  double u_c_dot = V_c_dot * cos(beta_c - x[2]) + V_c * sin(beta_c - x[2]) * x[5];
+  double v_c_dot = V_c_dot * sin(beta_c - x[2]) - V_c * cos(beta_c - x[2]) * x[5];
+
   dxdt[0] = cos(x[2]) * x[3] - sin(x[2]) * x[4];
   dxdt[1] = sin(x[2]) * x[3] + cos(x[2]) * x[4];
   dxdt[2] = x[5];
-  dxdt[3] = -d11 / m11 * u_r + m22 / m11 * x[4] * x[5] + x[6] / m11 + x[7] / m11 - delta_x / m11;
-  dxdt[4] = -d22 / m22 * v_r - m11 / m22 * x[3] * x[5] + x[8] / m22 + x[9] / m22 - delta_y / m22;
-  dxdt[5] = -d33 / m33 * x[5] + (m11 - m22) / m33 * x[3] * x[4] + m22 / m33 * x[4] * nu_u - m11 / m33 * x[3] * nu_v
-          + aa / (2 * m33) * x[6] - aa / (2 * m33) * x[7] + bb / (2 * m33) * x[8] - bb / (2 * m33) * x[9] - delta_theta / m33;
-  dxdt[6] = 0;
-  dxdt[7] = 0;
-  dxdt[8] = 0;
-  dxdt[9] = 0;
+  dxdt[3] = nu_r_dot[0] + u_c_dot;
+  dxdt[4] = nu_r_dot[1] + v_c_dot;
+  dxdt[5] = nu_r_dot[2];
+  dxdt[6] = 0; // u1
+  dxdt[7] = 0; // u2
+  dxdt[8] = 0; // u3
+  dxdt[9] = 0; // u4
 
   //  dxdt[0] = cos(x[2]) * x[3] - sin(x[2]) * x[4];
   // dxdt[1] = sin(x[2]) * x[3] + cos(x[2]) * x[4];
@@ -71,17 +119,18 @@ void Sim::forceCallback(const roboat_core::Force::ConstPtr &msg)
 
 void Sim::dist_callback(const geometry_msgs::Pose2D::ConstPtr &delta)
 {
-    delta_x = delta->x; //North disturbance in Newtons
-    delta_y = delta->y; //East disturbance in Newtons
-    delta_theta = delta->theta; //Rotational disturbance in Nm
+    delta_x = delta->x; //Body-frame surge (x) disturbance force in Newtons
+    delta_y = delta->y; //Body-frame sway (y) disturbance force in Newtons
+    delta_theta = delta->theta; //Yaw disturbance moment in Nm
 }
 
 void Sim::currents_callback(const geometry_msgs::Pose2D::ConstPtr &cur)
 {
     V_c = cur->x; //Current magnitude in m/s
+    V_c_dot = cur->y; //Effective derivative of current magnitude in m/s^2 (0 while saturated)
     beta_c = cur->theta; //Current direction in rad
-    nu_u = V_c*cos(beta_c - state[2]);
-    nu_v = V_c*sin(beta_c - state[2]);
+    u_c = V_c*cos(beta_c - state[2]); // Current velocity in the body surge direction in m/s
+    v_c = V_c*sin(beta_c - state[2]); // Current velocity in the body sway direction in m/s
 }
 
 void Sim::initialPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg)
