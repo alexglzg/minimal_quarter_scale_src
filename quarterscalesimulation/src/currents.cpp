@@ -60,6 +60,8 @@ public:
         n.param("currents/v_min", v_min, r_v_min);
         n.param("currents/v_max", v_max, r_v_max);
 
+        generator_cur.seed(std::random_device{}());  // seed the random number generator with a random device, to avoid that the same numbers are generated for all quantities
+
         V_current = 0.0;
         mean_cur = 0.0;
         V_c_dot_last = 0.0;
