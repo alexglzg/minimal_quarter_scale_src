@@ -22,6 +22,17 @@ RUN apt-get update && apt-get install -y \
     ros-noetic-move-base \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip: the base image ships pip 20.0.2, which can't parse the
+# manylinux wheel tags used by recent jaxlib releases
+RUN pip3 install --no-cache-dir --upgrade pip
+
+# jaxlib dropped Python 3.8 wheels on PyPI after 0.4.13 (this image's Python
+# is 3.8), so pull that last compatible build from Google's release archive
+RUN pip3 install --no-cache-dir \
+    jax==0.4.13 \
+    jaxlib==0.4.13 \
+    -f https://storage.googleapis.com/jax-releases/jax_releases.html
+
 # Install Python packages from your pip_packages.txt
 RUN pip3 install --no-cache-dir \
     casadi \
@@ -29,7 +40,10 @@ RUN pip3 install --no-cache-dir \
     numpy \
     matplotlib \
     transforms3d \
-    packaging
+    packaging \
+    equinox \
+    qpax \
+    pyyaml
 
 RUN apt-get update && apt-get install -y \
     ros-noetic-serial \
