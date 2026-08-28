@@ -34,6 +34,10 @@ RUN pip3 install --no-cache-dir \
     -f https://storage.googleapis.com/jax-releases/jax_releases.html
 
 # Install Python packages from your pip_packages.txt
+# equinox/qpax are pinned: anmpc_alpha.py targets these exact APIs
+# (eqx.static_field(), qpax.solve_qp_primal without backend/max_iter) --
+# newer releases (eqx.field(), jax.tree.map, qpax backend= kwarg) require a
+# jax/jaxlib newer than the 0.4.13 pin above, which this Python 3.8 image can't get.
 RUN pip3 install --no-cache-dir \
     casadi \
     rockit-meco \
@@ -41,8 +45,8 @@ RUN pip3 install --no-cache-dir \
     matplotlib \
     transforms3d \
     packaging \
-    equinox \
-    qpax \
+    equinox==0.10.4 \
+    qpax==0.0.9 \
     pyyaml
 
 RUN apt-get update && apt-get install -y \

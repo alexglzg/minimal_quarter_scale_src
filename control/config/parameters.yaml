@@ -8,7 +8,7 @@ parameters_model:
   aa: 0.45
   bb: 0.9
   max_force_limit: 6
-  u_ref: 0.3
+  u_ref: 0.6 #0.3
   ego_length: 0.9
   ego_width: 0.45
 
@@ -23,12 +23,12 @@ parameters_mpc:
   Qr: 0.1
   Qpsi: 10.0
   Qu: 200
-  num_obstacles: 3
+  num_obstacles: 4
   dummy_x: 1000.0
   dummy_y: 1000.0
   dummy_radius: 0.1
-  cbf_type: c_hocbf
-  adaptive: false
+  cbf_type: combo_chocbf_dcbf
+  adaptive: true
   solver: fatrop
 
 
@@ -50,6 +50,18 @@ parameters_alpha:
 path:
   type: sine
   x_multiplier: 0.2
-  y_offset: 0.0
+  y_offset: 3.0 #0.0
   slope: 0.0
   intercept: 0.0
+
+parameters_amortized_mpc:
+  model_file: model.eqx
+  meta_file: model_meta.yaml
+  # Optional per-field [lo, hi] pairs from the training config, used only to
+  # warn at startup if kx/y0/u_ref fall outside them. Leave empty to skip.
+  trained_ranges: {
+    "kx":    [0.10, 0.30],
+    "y0":    [2.5,  3.5],
+    "u_ref": [0.40, 0.70],
+    "r_obs": [0.4,  0.8],
+  }

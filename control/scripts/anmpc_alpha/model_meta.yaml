@@ -1,0 +1,14 @@
+# Metadata needed to reconstruct the model skeleton before loading model.eqx.
+# These MUST match the values the model was trained with (source run:
+# examples/vessel_avoidance/data/20260709_105505, combo ana_i64_bs256_s0,
+# training_status: success, best_val_mse: 0.0041, post-DAgger).
+solver: ana_i64        # Amortized NMPC + learned class-K alpha (AmortizedNMPCAlpha)
+n_obs: 6               # number of obstacles the QP / features are sized for (fixed)
+dt: 0.1                # control step [s]
+f_max: 6.0             # symmetric thruster force limit [N]
+weights:               # path-following stage-cost weights (Gauss-Newton baseline)
+  q_ye:  20.0          # cross-track error
+  q_r:   0.1           # yaw rate
+  q_psi: 10.0          # heading alignment
+  q_u:   200.0         # surge-speed tracking
+  r_f:   1.0           # thruster effort

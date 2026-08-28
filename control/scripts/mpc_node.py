@@ -61,7 +61,7 @@ class MPCNode:
         self.publish_path()
         rospy.Timer(rospy.Duration(1.0), lambda _: self.publish_path())
 
-        # Control loop at 10 Hz
+        # Control loop
         self.current_state = None
         self.control_period = mpc_p['dt']
         self.control_timer = rospy.Timer(
