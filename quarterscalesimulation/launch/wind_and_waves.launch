@@ -9,13 +9,35 @@
     <param name = "stddev_wN" value = "0.1" />
     <param name = "stddev_dN" value = "0.05" />
     <param name = "beta_wind" value = "0.0" />
-    <param name = "V_wind_knots" value = "3.98" /> <!-- ~2.05 m/s, previous default -->
+    <param name = "V_wind_knots" value = "2.0" /> <!-- "3.98"~2.05 m/s, previous default -->
     <param name = "scale_factor_wind" value = "1.0" />
     <param name = "scale_factor_wave" value = "1.0" />
     <param name = "buoy_stddev_dF" value = "0.05" />
     <param name = "buoy_dF_min" value = "-2.0" />
     <param name = "buoy_dF_max" value = "2.0" />
     <param name = "buoy_CD" value = "0.5" />
+
+    <!-- Wind gusts: slow OU background + Poisson gust bursts -->
+    <!-- <param name = "gust_mu_speed" value = "0.08" />
+    <param name = "gust_stddev_speed" value = "1.5" />
+    <param name = "gust_mu_dir" value = "0.06" />
+    <param name = "gust_stddev_dir" value = "0.6" />
+    <param name = "gust_wind_speed_min" value = "0.0" />
+    <param name = "wave_dir_tau" value = "15.0" />
+    <param name = "gust_rate" value = "0.02222" /> 
+    <param name = "gust_speed_min" value = "3.0" />
+    <param name = "gust_speed_max" value = "8.0" />
+    <param name = "gust_duration_min" value = "2.0" />
+    <param name = "gust_duration_max" value = "6.0" />
+    <param name = "gust_dir_offset_max" value = "0.4" />
+    </node> -->
+
+
+    <!-- Wind gusts disabled: zero noise + zero trigger rate pins V_wind/beta_wind
+         at V_wind_knots/beta_wind above, same as pre-gust behavior -->
+    <param name = "gust_stddev_speed" value = "0.0" />
+    <param name = "gust_stddev_dir" value = "0.0" />
+    <param name = "gust_rate" value = "0.0" />
     </node>
 
 </launch>

@@ -9,8 +9,8 @@ add_compile_options(-std=c++11)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED
 roscpp
-rospy 
-std_msgs 
+rospy
+std_msgs
 genmsg
 sensor_msgs
 tf2
@@ -19,6 +19,7 @@ tf2_geometry_msgs
 gazebo_ros
 message_generation
 roboat_core
+visualization_msgs
 )
 
 find_package (Eigen3 REQUIRED)
@@ -231,6 +232,9 @@ target_link_libraries(wind_and_waves ${catkin_LIBRARIES})
 
 add_executable(currents src/currents.cpp)
 target_link_libraries(currents ${catkin_LIBRARIES})
+
+add_executable(env_markers src/env_markers.cpp)
+target_link_libraries(env_markers ${catkin_LIBRARIES})
 
 add_executable(qs_sim_node                 src/sim_node.cpp                   src/Sim.cpp)
 target_link_libraries(qs_sim_node                   ${catkin_LIBRARIES})

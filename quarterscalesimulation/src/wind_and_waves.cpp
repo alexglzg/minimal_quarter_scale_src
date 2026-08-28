@@ -122,6 +122,42 @@ public:
     float beta_wind;
     float V_wind;
     float V_wind_knots;
+
+    // --- Wind gust process: slow OU background + Poisson gust bursts ---
+    float V_wind_nominal;
+    float beta_wind_nominal;
+    float V_bg;
+    float beta_bg;
+    float dV_dot_last;
+    float dbeta_dot_last;
+
+    float gust_mu_speed;
+    float gust_stddev_speed;
+    float gust_mu_dir;
+    float gust_stddev_dir;
+    float gust_wind_speed_min;
+    float wave_dir_tau;
+
+    float gust_rate;
+    float gust_speed_min;
+    float gust_speed_max;
+    float gust_duration_min;
+    float gust_duration_max;
+    float gust_dir_offset_max;
+
+    float gust_time_left;
+    float gust_duration;
+    float gust_speed_peak;
+    float gust_dir_offset;
+
+    std::default_random_engine generator_gustV;
+    std::default_random_engine generator_gustBeta;
+    std::default_random_engine generator_gustTrigger;
+    std::default_random_engine generator_gustDuration;
+    std::default_random_engine generator_gustPeak;
+    std::default_random_engine generator_gustDirOffset;
+
+
     float CX;
     float CY;
     float CN;
@@ -154,6 +190,7 @@ public:
     WindWaves()
     {
         disturbance_pub = n.advertise<geometry_msgs::Pose2D>("/roboat_disturbance", 1);
+        wind_pub = n.advertise<geometry_msgs::Pose2D>("/roboat_wind", 1);
 
         pose_sub = n.subscribe("qs_dynamics/inertial_pose", 1000, &WindWaves::pose_callback, this);
         vel_sub = n.subscribe("qs_dynamics/body_vel", 1000, &WindWaves::vel_callback, this);
@@ -176,6 +213,19 @@ public:
         static const float r_buoy_dF_max = 2.0;
         static const float r_buoy_CD = 0.5;
 
+        static const float r_gust_mu_speed = 0.08;
+        static const float r_gust_stddev_speed = 1.5;
+        static const float r_gust_mu_dir = 0.06;
+        static const float r_gust_stddev_dir = 0.6;
+        static const float r_gust_wind_speed_min = 0.0;
+        static const float r_wave_dir_tau = 15.0;
+        static const float r_gust_rate = 1.0f / 45.0f;
+        static const float r_gust_speed_min = 3.0;
+        static const float r_gust_speed_max = 8.0;
+        static const float r_gust_duration_min = 2.0;
+        static const float r_gust_duration_max = 6.0;
+        static const float r_gust_dir_offset_max = 0.4;
+
         n.param("wind_and_waves/beta_wave", beta_wave, r_beta_wave);
         n.param("wind_and_waves/stddev_wF", stddev_wF, r_stddev_wF);
         n.param("wind_and_waves/stddev_dF", stddev_dF, r_stddev_dF);
@@ -185,6 +235,20 @@ public:
         n.param("wind_and_waves/V_wind_knots", V_wind_knots, r_V_wind_knots);
         n.param("wind_and_waves/scale_factor_wind", scale_factor_wind, r_scale_factor_wind);
         n.param("wind_and_waves/scale_factor_wave", scale_factor_wave, r_scale_factor_wave);
+
+        n.param("wind_and_waves/gust_mu_speed", gust_mu_speed, r_gust_mu_speed);
+        n.param("wind_and_waves/gust_stddev_speed", gust_stddev_speed, r_gust_stddev_speed);
+        n.param("wind_and_waves/gust_mu_dir", gust_mu_dir, r_gust_mu_dir);
+        n.param("wind_and_waves/gust_stddev_dir", gust_stddev_dir, r_gust_stddev_dir);
+        n.param("wind_and_waves/gust_wind_speed_min", gust_wind_speed_min, r_gust_wind_speed_min);
+        n.param("wind_and_waves/wave_dir_tau", wave_dir_tau, r_wave_dir_tau);
+        n.param("wind_and_waves/gust_rate", gust_rate, r_gust_rate);
+        n.param("wind_and_waves/gust_speed_min", gust_speed_min, r_gust_speed_min);
+        n.param("wind_and_waves/gust_speed_max", gust_speed_max, r_gust_speed_max);
+        n.param("wind_and_waves/gust_duration_min", gust_duration_min, r_gust_duration_min);
+        n.param("wind_and_waves/gust_duration_max", gust_duration_max, r_gust_duration_max);
+        n.param("wind_and_waves/gust_dir_offset_max", gust_dir_offset_max, r_gust_dir_offset_max);
+
         n.param("wind_and_waves/dF_min", dF_min, r_dF_min);
         n.param("wind_and_waves/dF_max", dF_max, r_dF_max);
         n.param("wind_and_waves/dN_min", dN_min, r_dN_min);
@@ -201,11 +265,30 @@ public:
         float B = 0.74f * std::pow(9.81f / V194_ms, 0.25f);
         w0 = std::pow((4.0f * B) / 5.0f, 0.25f);
         V_wind = V10_ms;
+        V_wind_nominal = V10_ms;
+        beta_wind_nominal = beta_wind;
+        V_bg = V_wind_nominal;
+        beta_bg = beta_wind_nominal;
+        beta_wave = beta_wind_nominal;   // overrides the beta_wave ROS param as the starting value
+        dV_dot_last = 0.0;
+        dbeta_dot_last = 0.0;
+        gust_time_left = 0.0;
+        gust_duration = 0.0;
+        gust_speed_peak = 0.0;
+        gust_dir_offset = 0.0;
+
 
         generator_wF.seed(std::random_device{}());  // seed the random number generator with a random device, to avoid that the same numbers are generated for all quantities
         generator_dF.seed(std::random_device{}());
         generator_wN.seed(std::random_device{}());
         generator_dN.seed(std::random_device{}());
+
+        generator_gustV.seed(std::random_device{}());
+        generator_gustBeta.seed(std::random_device{}());
+        generator_gustTrigger.seed(std::random_device{}());
+        generator_gustDuration.seed(std::random_device{}());
+        generator_gustPeak.seed(std::random_device{}());
+        generator_gustDirOffset.seed(std::random_device{}());
 
         // Simplified force publishers/subscribers for any buoys configured on the shared
         // "/buoys" param (same list buoy_simulator.py reads), so buoy geometry stays defined
@@ -296,6 +379,51 @@ public:
 
     void time_step()
     {
+        /******* Wind gusts: OU background + Poisson bursts *******/
+        std::normal_distribution<float> dist_gustV(0.0, gust_stddev_speed);
+        std::normal_distribution<float> dist_gustBeta(0.0, gust_stddev_dir);
+        std::uniform_real_distribution<float> dist_uniform(0.0, 1.0);
+
+        float noise_V = gust_stddev_speed > 0 ? dist_gustV(generator_gustV) : 0.0f;
+        float dV_dot = noise_V - gust_mu_speed * (V_bg - V_wind_nominal);
+        V_bg = integral_step * (dV_dot + dV_dot_last) / 2 + V_bg;
+        dV_dot_last = dV_dot;
+
+        float noise_beta = gust_stddev_dir > 0 ? dist_gustBeta(generator_gustBeta) : 0.0f;
+        float dbeta_dot = noise_beta - gust_mu_dir * (beta_bg - beta_wind_nominal);
+        beta_bg = integral_step * (dbeta_dot + dbeta_dot_last) / 2 + beta_bg;
+        dbeta_dot_last = dbeta_dot;
+
+        // beta_wave lags only the slow background wind direction, not individual gust
+        // bursts -- wrap-safe so it takes the short way around across +-pi.
+        float wrap_diff = std::atan2(std::sin(beta_bg - beta_wave), std::cos(beta_bg - beta_wave));
+        beta_wave += wrap_diff * (1.0f - std::exp(-integral_step / wave_dir_tau));
+
+        // Gust bursts: fresh Poisson arrival while none active, else ride out the
+        // current one's raised-cosine envelope (0 -> peak -> 0 over its duration).
+        if (gust_time_left <= 0.0f && gust_rate > 0.0f &&
+            dist_uniform(generator_gustTrigger) < gust_rate * integral_step)
+        {
+            std::uniform_real_distribution<float> dist_duration(gust_duration_min, gust_duration_max);
+            std::uniform_real_distribution<float> dist_peak(gust_speed_min, gust_speed_max);
+            std::uniform_real_distribution<float> dist_offset(-gust_dir_offset_max, gust_dir_offset_max);
+            gust_duration = dist_duration(generator_gustDuration);
+            gust_time_left = gust_duration;
+            gust_speed_peak = dist_peak(generator_gustPeak);
+            gust_dir_offset = dist_offset(generator_gustDirOffset);
+        }
+
+        float envelope = 0.0f;
+        if (gust_time_left > 0.0f)
+        {
+            float elapsed = gust_duration - gust_time_left;
+            envelope = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) * elapsed / gust_duration));
+            gust_time_left -= integral_step;
+        }
+
+        V_wind = std::max(V_bg + gust_speed_peak * envelope, gust_wind_speed_min);
+        beta_wind = beta_bg + gust_dir_offset * envelope;
+
         /******* Wave Roboat *******/
         std::normal_distribution<float> dist_wF(mean_wF, stddev_wF);
         std::normal_distribution<float> dist_wN(mean_wN, stddev_wN);
@@ -386,6 +514,12 @@ public:
         //Data publishing
         disturbance_pub.publish(disturbance);
 
+        geometry_msgs::Pose2D wind_state;
+        wind_state.x = V_wind;      // wind speed in m/s
+        wind_state.y = 0.0;         // unused
+        wind_state.theta = beta_wind;  // wind direction in rad, NED convention (same as beta_current/psi)
+        wind_pub.publish(wind_state);
+
         /****** Buoys ******/
         // Simplified per-buoy wind-drag + wave-drift forcing, published in the NED frame
         // directly (buoys are symmetric/round, so there is no heading to project against).
@@ -424,6 +558,7 @@ private:
     ros::NodeHandle n;
 
     ros::Publisher disturbance_pub;
+    ros::Publisher wind_pub;
 
     ros::Subscriber pose_sub;
     ros::Subscriber vel_sub;

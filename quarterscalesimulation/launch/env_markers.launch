@@ -1,0 +1,16 @@
+<launch>
+
+    <!-- Fixed-position RViz markers for wind and current speed/direction.
+         Adjust the positions below to a spot clear of the vessel/pool obstacles. -->
+
+    <node name="env_markers" type="env_markers" pkg="quarterscalesimulation" >
+    <param name = "frame_id" value = "map" />
+    <param name = "wind_marker_x" value = "3.0" />
+    <param name = "wind_marker_y" value = "4.0" />
+    <param name = "wind_marker_z" value = "1.0" />
+    <param name = "current_marker_x" value = "3.0" />
+    <param name = "current_marker_y" value = "2.0" />
+    <param name = "current_marker_z" value = "1.0" />
+    </node>
+
+</launch>
