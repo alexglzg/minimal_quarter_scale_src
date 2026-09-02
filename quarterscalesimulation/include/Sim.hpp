@@ -33,7 +33,7 @@ private:
   double d33 = 0.6;  // drag torque coff
   double m11 = 12;   // mass plus added mass in the x direction
   double m22 = 24;   // mass plus added mass in the y direction
-  double m33 = 1.5;  // moment of inertia plus added mass around the z axis
+  double m33 = 3.0;  // moment of inertia plus added mass around the z axis
   double aa = 0.45;
   double bb = 0.9;
   double step = 0.1;

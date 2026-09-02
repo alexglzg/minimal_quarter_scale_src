@@ -1,0 +1,21 @@
+<launch>
+    <!-- Load path parameters (global for simplicity) -->
+    <rosparam file="$(find control)/config/parameters.yaml" command="load" />
+
+    <!-- NMPC oracle node: standalone alternative to mpc_node.py; run this
+         instead of (not alongside) mpc_node.py, both command /mpc_force.
+         Does not use alpha_node/'/cbf_alphas': that topic is specific to
+         mpc_opti_chocbf_dcbf_core.py; the oracle uses its own default_gamma. -->
+    <node pkg="control"
+          type="mpc_oracle_node.py"
+          name="mpc_oracle_node"
+          output="screen">
+    </node>
+
+    <!-- Single dashboard window with live numeric charts for MPC computation
+         time and solver status, pointed at the oracle's status namespace -->
+    <node name="mpc_status_dashboard" pkg="control" type="mpc_status_dashboard.py">
+        <param name="status_ns" value="mpc_status_oracle" />
+    </node>
+
+</launch>

@@ -15,8 +15,8 @@ parameters_model:
 parameters_mpc:
   nx: 7                  
   nu: 4                   
-  Tf: 2                   
-  Nhor: 20
+  Tf: 4
+  Nhor: 40
   dt: 0.1
   Qye: 20.0
   Qr: 0.1

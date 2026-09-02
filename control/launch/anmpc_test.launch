@@ -1,0 +1,13 @@
+<launch>
+    <!-- Load path/model parameters (global for simplicity) -->
+    <rosparam file="$(find control)/config/parameters.yaml" command="load" />
+
+    <!-- Amortized-NMPC (anmpc) controller node (drop anmpc_alpha/model.eqx +
+         model_meta.yaml into control/scripts/anmpc_alpha/ before running this) -->
+    <node pkg="control"
+          type="anmpc_alpha_node.py"
+          name="anmpc_node"
+          output="screen">
+    </node>
+
+</launch>

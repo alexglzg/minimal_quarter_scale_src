@@ -82,14 +82,14 @@ def validate_inputs(x, path, centers, radii, n_obs):
     assert np.all(radii > 0), "obstacle radii must be positive"
 
 
-class MPCAlphaNode:
+class AnmpcNode:
     def __init__(self):
-        model_p, mpc_p, path_p, alpha_p = self.load_params()
+        model_p, mpc_p, path_p, anmpc_p = self.load_params()
 
         # Step 1: load the trained model and build the environment (n_obs, dt, f_max, r_ego)
         self.model, self.dtype = load_alpha_model(
-            MODEL_DIR / alpha_p["model_file"],
-            meta_path=MODEL_DIR / alpha_p["meta_file"],
+            MODEL_DIR / anmpc_p["model_file"],
+            meta_path=MODEL_DIR / anmpc_p["meta_file"],
         )
         self.env = make_env(n_obs=self.model.n_obs, dt=self.model.dt)
         self.n_obs = self.model.n_obs
@@ -98,7 +98,7 @@ class MPCAlphaNode:
         # Step 2: warm up the JIT-compiled controller once at startup, before any control loop
         self._warm_up()
         rospy.loginfo(
-            "ampc_node_alpha - warm up complete: n_obs=%d dt=%.3fs f_max=%.2fN r_ego=%.3fm",
+            "anmpc_node - warm up complete: n_obs=%d dt=%.3fs f_max=%.2fN r_ego=%.3fm",
             self.n_obs, self.model.dt, self.env.f_max, self.env.r_ego,
         )
 
@@ -113,7 +113,7 @@ class MPCAlphaNode:
         self.path_vec = np.array(
             [self.path.k, self.path.y_offset, model_p["u_ref"]], dtype=float
         )
-        self._warn_if_out_of_trained_range(alpha_p.get("trained_ranges") or {})
+        self._warn_if_out_of_trained_range(anmpc_p.get("trained_ranges") or {})
 
         # No detections yet -- control_loop waits for a real /buoy_array reading
         # before running the controller (see anmpc_alpha/INTEGRATION.md section
@@ -127,11 +127,15 @@ class MPCAlphaNode:
 
         self.cmd_pub = rospy.Publisher("/mpc_force", Force, queue_size=1)
         self.solve_time_pub = rospy.Publisher(
-            "/mpc_status_alpha/solve_time_ms", Float64, queue_size=1)
+            "/mpc_status_anmpc/solve_time_ms", Float64, queue_size=1)
+        # Narrower measurement -- the network+QP call only, same placement as the
+        # comparison notebook's rollout() timing -- see control_loop below.
+        self.model_solve_time_pub = rospy.Publisher(
+            "/mpc_status_anmpc/model_solve_time_ms", Float64, queue_size=1)
         self.success_pub = rospy.Publisher(
-            "/mpc_status_alpha/success", Bool, queue_size=1)
+            "/mpc_status_anmpc/success", Bool, queue_size=1)
         self.gammas_pub = rospy.Publisher(
-            "/mpc_status_alpha/gammas", Float64MultiArray, queue_size=1)
+            "/mpc_status_anmpc/gammas", Float64MultiArray, queue_size=1)
 
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
         rospy.Subscriber("/buoy_array", BuoyArray, self.buoy_array_cb)
@@ -159,7 +163,7 @@ class MPCAlphaNode:
         t0 = time.perf_counter()
         jax.block_until_ready(_controller_step(self.model, x, path, oc, orr))
         rospy.loginfo(
-            "ampc_node_alpha - warm up complete: JIT warm-up took %.1f ms",
+            "anmpc_node - warm up complete: JIT warm-up took %.1f ms",
             (time.perf_counter() - t0) * 1e3,
         )
 
@@ -168,7 +172,7 @@ class MPCAlphaNode:
             lo_hi = ranges.get(name)
             if lo_hi and not (lo_hi[0] <= val <= lo_hi[1]):
                 rospy.logwarn(
-                    "ampc_node_alpha: %s=%.3f is outside the trained range "
+                    "anmpc_node: %s=%.3f is outside the trained range "
                     "[%.2f, %.2f] -- the network will be extrapolating",
                     name, val, lo_hi[0], lo_hi[1],
                 )
@@ -218,21 +222,25 @@ class MPCAlphaNode:
             x[2] = wrap_angle(x[2])
             x[6] = self.s = anchor_arc_length(self.path_vec, x, self.s)
             validate_inputs(x, self.path_vec, centers, radii, self.n_obs)
-            print("x:", x)
-            print('centers:', centers)
-            print('radii:', radii)
+
+            # Narrower timing, placed the same way barriernet_ampc_compare_models.ipynb's
+            # rollout() places it (right before the model call, after anchor_arc_length):
+            # isolates the network+QP cost from this node's own per-tick overhead
+            # (anchor_arc_length, numpy<->JAX conversions), for a like-for-like number
+            # against the notebook's solve-time column.
+            t_model = time.perf_counter()
             u_safe, _u_nom, gammas = _controller_step(
                 self.model,
                 jnp.asarray(x, self.dtype), jnp.asarray(self.path_vec, self.dtype),
                 jnp.asarray(centers, self.dtype), jnp.asarray(radii, self.dtype),
             )
-            print("u_safe:", u_safe)
             u = np.asarray(u_safe, dtype=float)
+            model_solve_time = time.perf_counter() - t_model
             gammas = np.asarray(gammas, dtype=float)
         except Exception as e:
             solve_time = time.perf_counter() - t0
             rospy.logwarn(
-                "ampc_node_alpha: control step failed after %.1f ms: %s",
+                "anmpc_node: control step failed after %.1f ms: %s",
                 solve_time * 1e3, e,
             )
             self.publish_status(solve_time, success=False)
@@ -240,12 +248,13 @@ class MPCAlphaNode:
         solve_time = time.perf_counter() - t0
 
         if not np.all(np.isfinite(u)):  # qpax has no feasibility fallback
-            rospy.logwarn("ampc_node_alpha: non-finite control output, skipping publish")
+            rospy.logwarn("anmpc_node: non-finite control output, skipping publish")
             self.publish_status(solve_time, success=False)
             return
 
         self.publish_cmd(u)
         self.publish_status(solve_time, success=True)
+        self.model_solve_time_pub.publish(Float64(model_solve_time * 1000.0))
         self.gammas_pub.publish(Float64MultiArray(data=gammas.flatten().tolist()))
 
     def publish_cmd(self, u):
@@ -270,6 +279,6 @@ class MPCAlphaNode:
 
 
 if __name__ == "__main__":
-    rospy.init_node("anmpc_alpha_node")
-    MPCAlphaNode()
+    rospy.init_node("anmpc_node")
+    AnmpcNode()
     rospy.spin()

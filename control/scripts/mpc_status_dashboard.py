@@ -95,13 +95,18 @@ def main():
     rospy.init_node("mpc_status_dashboard", anonymous=True, disable_signals=True)
     app = QApplication(sys.argv)
 
+    # Which controller's status topics to plot: /mpc_status (mpc_node.py,
+    # default) or /mpc_status_oracle (mpc_oracle_node.py) / /mpc_status_anmpc
+    # (anmpc_alpha_node.py) -- set via a <param> in the launch file.
+    status_ns = rospy.get_param("~status_ns", "mpc_status")
+
     alpha_topics, alpha_ylim = alpha_topics_and_ylim()
 
     # (title, topics, threshold, fixed_ylim). fixed_ylim pads the range so the
     # plotted values don't sit flush against the axes edges.
     topic_specs = [
-        ("Solve time (ms)", ["/mpc_status/solve_time_ms/data"], CONTROL_PERIOD_MS, None),
-        ("Solver success (0/1)", ["/mpc_status/success/data"], None, (-0.5, 1.5)),
+        ("Solve time (ms)", [f"/{status_ns}/solve_time_ms/data"], CONTROL_PERIOD_MS, None),
+        ("Solver success (0/1)", [f"/{status_ns}/success/data"], None, (-0.5, 1.5)),
         ("CBF alphas (per obstacle)", alpha_topics, None, alpha_ylim),
     ]
 
