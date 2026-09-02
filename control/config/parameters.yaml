@@ -12,24 +12,6 @@ parameters_model:
   ego_length: 0.9
   ego_width: 0.45
 
-# qs_sim_node (Sim.cpp) reads its plant parameters from this "system_dynamics"
-# namespace, not from parameters_model above -- separate C++ node, separate
-# hardcoded param names, so keep these two blocks in sync by hand. Must mirror
-# parameters_model exactly, or the simulated plant and every controller's
-# assumed plant silently diverge (m33 was 1.5 here vs 3.0 in parameters_model
-# before this block existed -- Sim.cpp's own compiled-in default, since nothing
-# in this repo populated system_dynamics/* until now).
-system_dynamics:
-  m11: 12.0
-  m22: 24.0
-  m33: 3.0
-  d11: 6.0
-  d22: 8.0
-  d33: 0.6
-  aa: 0.45
-  bb: 0.9
-
-
 parameters_mpc:
   nx: 7                  
   nu: 4                   
