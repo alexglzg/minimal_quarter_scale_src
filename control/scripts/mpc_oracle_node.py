@@ -88,9 +88,14 @@ class MPCOracleNode:
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
         rospy.Subscriber("/buoy_array", BuoyArray, self.buoy_array_cb)
 
+        # latch=True: a single publish is enough for any subscriber, including ones
+        # that connect later (e.g. RViz started after this node) -- no need to
+        # re-publish periodically. A 1Hz re-publish used to run here; removed
+        # because re-serializing this 1000-pose message every second was
+        # measurably delaying the control loop's own timer callback (GIL
+        # contention), inflating solve_time_ms by several ms once a second.
         self.path_pub = rospy.Publisher("/desired_path", Path, queue_size=1, latch=True)
         self.publish_path()
-        rospy.Timer(rospy.Duration(1.0), lambda _: self.publish_path())
 
         self.control_timer = rospy.Timer(rospy.Duration(self.mpc.dt), self.control_loop)
 
@@ -169,16 +174,24 @@ class MPCOracleNode:
         self.success_pub.publish(Bool(success))
 
     def publish_path(self):
-        path_msg = Path()
-        path_msg.header.frame_id = "map"
-        path_msg.header.stamp = rospy.Time.now()
-        for s in np.linspace(0, 500, 1000):
-            x, y = self.path.xy(s)
-            pose = PoseStamped()
-            pose.pose.position.x = x
-            pose.pose.position.y = -y
-            path_msg.poses.append(pose)
-        self.path_pub.publish(path_msg)
+        # Built once and cached: the reference path never changes during a run, so
+        # there's no need to reconstruct 1000 poses on every call. This used to run
+        # inside a 1Hz rospy.Timer, and the GIL contention from its Python-level
+        # loop was measurably delaying the control loop's own timer callback,
+        # inflating solve_time_ms by ~6-10ms once a second (see the scenario-run
+        # investigation this fixes).
+        if not hasattr(self, "_path_msg"):
+            path_msg = Path()
+            path_msg.header.frame_id = "map"
+            for s in np.linspace(0, 500, 1000):
+                x, y = self.path.xy(s)
+                pose = PoseStamped()
+                pose.pose.position.x = x
+                pose.pose.position.y = -y
+                path_msg.poses.append(pose)
+            self._path_msg = path_msg
+        self._path_msg.header.stamp = rospy.Time.now()
+        self.path_pub.publish(self._path_msg)
 
 
 if __name__ == "__main__":
