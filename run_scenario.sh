@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one scenario through control/launch/compare_run.launch, for one or all
+# Run one scenario through control/launch/run_controllers_anmpc.launch, for one or all
 # three controllers, and print the control/scripts/compare_controllers.py
 # command to compare them afterward. Lives at the repo root; run it from
 # there (or anywhere -- it cd's to its own directory first).
@@ -22,7 +22,7 @@
 #   that (a "[...]" list of "{...}" maps on one line). roslaunch's own CLI
 #   arg:=value parser silently drops everything after the first newline in a
 #   multi-line value, so YAML block style (one "- name: ..." per line) breaks
-#   silently. See compare_run.launch's obstacles_yaml arg doc for the same
+#   silently. See run_controllers_anmpc.launch's obstacles_yaml arg doc for the same
 #   note and a from-scratch example.
 #
 # Add --disturbed to also run wind+waves+currents (their own launch files
@@ -69,10 +69,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! rostopic list >/dev/null 2>&1; then
-  echo "error: no roscore reachable. Start one first (roscore &) and try again." >&2
-  exit 1
-fi
+# if ! rostopic list >/dev/null 2>&1; then
+#   echo "error: no roscore reachable. Start one first (roscore &) and try again." >&2
+#   exit 1
+# fi
 
 if [[ -n "$SEED" ]]; then
   eval "$(python3 "$SCRIPTS_DIR/sample_scenario.py" --seed "$SEED" --index "$INDEX")"
@@ -100,7 +100,7 @@ echo
 
 for ctrl in $CONTROLLERS; do
   echo "=== $ctrl ==="
-  roslaunch control compare_run.launch controller:="$ctrl" scenario_id:="$SCENARIO_ID" \
+  roslaunch control run_controllers_anmpc.launch controller:="$ctrl" scenario_id:="$SCENARIO_ID" \
     duration:="$DURATION" y0:="$Y0" u_ref:="$U_REF" num_obstacles:="$NUM_OBSTACLES" \
     su0:=0.3 disturbed:="$DISTURBED" obstacles_yaml:="$OBSTACLES_YAML" \
     bag_dir:="$BAG_DIR"
@@ -117,8 +117,4 @@ for ctrl in oracle anmpc barriernet; do
     CMD="$CMD --${ctrl}_${CONDITION} $bag"
   fi
 done
-CMD="$CMD --y0 $Y0 --u_ref $U_REF --out ../plots/comparisons/compare_controllers_scenario${SCENARIO_ID}.png"
 
-echo
-echo "Compare with:"
-echo "  $CMD"

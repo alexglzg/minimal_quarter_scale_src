@@ -27,12 +27,15 @@ roslaunch roboat_planning run_boat.launch
 roslaunch obstacle_detector pcl_filter.launch
 - launches pcl-based pointcloud filter
 
-## Amortized MPC Experiments
+# Amortized MPC Experiments
 
-Compares three controllers on the same sinusoidal-path/buoy-avoidance task: the
-`oracle` (CasADi/IPOPT NMPC), `anmpc` (amortized NMPC network), and
-`barriernet` (BarrierNet). All three run through the same
-`control/launch/compare_run.launch`, one controller at a time, recording a
+Compares three controllers on the same sinusoidal-path/buoy-avoidance task: 
+- the `oracle` (CasADi/IPOPT NMPC), 
+- `anmpc` (amortized NMPC network), and
+-`barriernet` (BarrierNet). 
+
+All three run through the same
+`control/launch/run_controllers_anmpc.launch`, one controller at a time, recording a
 rosbag; comparisons are done offline from the bags.
 
 Needs `roscore` running first. All commands below assume `cd /ros1_ws/src`.
@@ -59,11 +62,24 @@ YAML flow style (`[{...}, {...}]`), not block style: roslaunch's own CLI
 `arg:=value` parser silently drops everything after the first newline in a
 multi-line value.
 
-Each controller run takes ~`duration`+10s (default `duration=40`). Bags land
+Bags land
 in `~/compare_bags` as `scenario<ID>_<controller>_<nominal|disturbed>_<timestamp>.bag`.
-`run_scenario.sh` prints the ready-to-run comparison command at the end.
 
 ### Compare the controllers from one scenario
+
+    python3 control/scripts/compare_controllers.py --seed 0 --index 3
+
+`--seed`/`--index` re-derive y0/u_ref the same way `run_scenario.sh` (and
+`sample_scenario()`) do, and auto-discover that scenario's own bags in
+`--bag_dir` (default `~/compare_bags`) by their `scenario<seed>_<index>_...`
+prefix -- both nominal (latest per controller) and disturbed (all matches per
+controller) are searched automatically, so no manual y0/u_ref lookup or bag
+paths are needed. Any controller/condition whose bag isn't found is skipped
+with a note, not an error.
+
+For a fully manual scenario (`--scenario_id my_test`, no seed/index), or to
+point at specific bags instead of auto-discovering, pass paths and
+`--y0`/`--u_ref` explicitly instead:
 
     python3 control/scripts/compare_controllers.py \
       --oracle_nominal ~/compare_bags/scenario<ID>_oracle_nominal_*.bag \
@@ -73,7 +89,10 @@ in `~/compare_bags` as `scenario<ID>_<controller>_<nominal|disturbed>_<timestamp
 
 Prints closed-loop cost/clearance/effort/solve-time tables and saves a
 dashboard plot (trajectories, solve-time distribution, cost vs. progress,
-speed tracking). Add `--oracle_disturbed`/`--anmpc_disturbed`/
+speed tracking) to `--out` (default `compare_controllers.png`, or
+`compare_controllers_scenario<seed>_<index>.png` with `--seed`) -- everything
+printed to screen is also saved alongside it as the same name with a `.txt`
+extension. Add `--oracle_disturbed`/`--anmpc_disturbed`/
 `--barriernet_disturbed` (repeatable, for averaging over several disturbed
 runs of the same scenario -- each is a different random draw) to also get a
 robustness report and a second plot with one zoomed panel per controller

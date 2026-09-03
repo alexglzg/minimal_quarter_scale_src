@@ -41,16 +41,21 @@ repeat --oracle_disturbed PATH for an explicit set of disturbed runs instead
 of auto-discovering. Any subset of controllers/conditions may be present --
 sections that need a bag that isn't there are skipped with a note, not an error.
 
-Points 2 & 3's methodology mirrors barriernet_ampc_compare_models.ipynb's
+For a run_scenario.sh scenario (bags named scenario{seed}_{index}_*.bag), pass
+--seed/--index instead of --y0/--u_ref/--bag_dir bookkeeping: y0/u_ref are
+re-derived the same way sample_scenario.py / aggregate_scenarios.py do, and
+bag auto-discovery is scoped to that scenario's own bags:
+
+    python3 compare_controllers.py --seed 0 --index 0
+
+Point 2's methodology mirrors barriernet_ampc_compare_models.ipynb's
 rollout() comparison as closely as the switch from an open-loop numpy rollout
 to real ROS bags allows: one cost sample per *control tick* (not per, faster,
 odometry sample), "closed-loop cost" is the raw sum of per-tick stage cost
 over the window (same `cost=float(np.sum(costs))` the notebook uses, so the
 numbers are the same kind of thing), and the headline result is a cost ratio
 against a reference controller -- the notebook's `cost ratio: X.XXx` line,
-just with the oracle as the reference now instead of the amortized model, and
-now also broken out by the oracle's own real-time budget (its own real solve
-times) instead of always being the whole run.
+just with the oracle as the reference now instead of the amortized model.
 
 What this answers
 ------------------
@@ -60,20 +65,15 @@ What this answers
 2. Whether the oracle converges, and how closely anmpc/barriernet approximate
    its closed-loop cost over a full run -- notebook-style table + cost ratio,
    oracle as the reference.
-3. The same table+ratio, but restricted to control ticks where the oracle did
-   NOT solve within 100 ms -- i.e. whether anmpc/barriernet, which never miss
-   their budget, actually beat the oracle's own achieved cost exactly where
-   the oracle is not real-time-usable. Ticks are matched across controllers by
-   elapsed time since each run's own start (all three start from the same
-   deterministic initial condition), not by tick index, since solve-time
-   variation makes tick counts differ slightly between runs.
-4. Robustness: for each controller with a nominal bag and at least one
+3. Robustness: for each controller with a nominal bag and at least one
    disturbed (wind+waves+currents) bag, how much success rate / cost /
    clearance degrade between the nominal run and the mean over however many
    disturbed runs were given.
 """
 import argparse
+import contextlib
 import glob
+import io
 import os
 import sys
 
@@ -85,6 +85,7 @@ from tf.transformations import euler_from_quaternion
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from anmpc_alpha.anmpc_alpha import stage_residual, anchor_arc_length  # noqa: E402
+from anmpc_compare_to_oracle import sample_scenario  # noqa: E402
 
 PARAMS_YAML = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "config", "parameters.yaml")
@@ -162,24 +163,6 @@ def _nearest_value(times, values, query_times):
     use_left = np.abs(query_times - times[left]) <= np.abs(times[right] - query_times)
     idx = np.where(use_left, left, right)
     return [values[i] for i in idx]
-
-
-def _label_by_nearest(query_t, ref_t, ref_label):
-    """ref_label[i] for whichever ref_t[i] is nearest each query time -- used to tag
-    every controller's ticks with "was the oracle within its 100ms budget at roughly
-    this point in the run", matched by elapsed time since each run's own start
-    rather than tick index (solve-time variation makes tick counts differ slightly)."""
-    if len(ref_t) == 0 or len(query_t) == 0:
-        return np.zeros(len(query_t), dtype=bool)
-    ref_t = np.asarray(ref_t)
-    order = np.argsort(ref_t)
-    ref_t_sorted, ref_label_sorted = ref_t[order], np.asarray(ref_label)[order]
-    idx = np.searchsorted(ref_t_sorted, query_t)
-    idx = np.clip(idx, 1, len(ref_t_sorted) - 1)
-    left, right = idx - 1, idx
-    use_left = np.abs(query_t - ref_t_sorted[left]) <= np.abs(ref_t_sorted[right] - query_t)
-    idx = np.where(use_left, left, right)
-    return ref_label_sorted[idx]
 
 
 # ---------------------------------------------------------------------------
@@ -289,24 +272,22 @@ def report_solve_times(results):
 
 
 # ---------------------------------------------------------------------------
-# Points 2 & 3: notebook-style cost table + ratio, vs the oracle, full run and
-# restricted to the oracle's real-time-budget outcome
+# Point 2: notebook-style cost table + ratio, vs the oracle, full run
 # ---------------------------------------------------------------------------
-def _window_summary(r, mask):
-    """Notebook-style rollout() summary (cost = raw sum, not mean, over the
-    window) restricted to a boolean tick mask; None if the mask selects nothing."""
-    if mask is None:
-        mask = np.ones(len(r["cost"]), dtype=bool)
-    if not mask.any():
+def _window_summary(r):
+    """Notebook-style rollout() summary: cost = raw sum, not mean, over the
+    whole run; None if there are no ticks."""
+    n = len(r["cost"])
+    if n == 0:
         return None
-    clr = r["clearance"][mask]
+    clr = r["clearance"]
     clr = clr[~np.isnan(clr)]
     return dict(
-        cost=float(np.sum(r["cost"][mask])),
+        cost=float(np.sum(r["cost"])),
         clearance=float(clr.min()) if len(clr) else float("nan"),
-        effort=float(np.sqrt(np.mean(np.sum(r["u"][mask] ** 2, axis=1)))),
-        solve_ms=float(np.mean(r["solve_ms"][mask])) if len(r["solve_ms"]) == len(mask) else float("nan"),
-        n=int(mask.sum()),
+        effort=float(np.sqrt(np.mean(np.sum(r["u"] ** 2, axis=1)))),
+        solve_ms=float(np.mean(r["solve_ms"])) if len(r["solve_ms"]) == n else float("nan"),
+        n=n,
     )
 
 
@@ -336,7 +317,7 @@ def _print_table(summaries, reference):
 
 def report_cost_vs_oracle(results):
     print("\n" + "=" * 70)
-    print("2/3) Closed-loop cost vs the oracle (notebook-style: cost = sum of")
+    print("2) Closed-loop cost vs the oracle (notebook-style: cost = sum of")
     print("     per-tick stage cost, ratio to the oracle as reference)")
     print("=" * 70)
     nominal = {name: results[("nominal", name)] for name in CONTROLLERS if ("nominal", name) in results}
@@ -346,39 +327,19 @@ def report_cost_vs_oracle(results):
 
     print("\n--- full run (same window for every controller, like rollout()'s")
     print("    fixed n_steps -- all three start from the same initial condition) ---")
-    full = {name: _window_summary(r, None) for name, r in nominal.items()}
+    full = {name: _window_summary(r) for name, r in nominal.items()}
     _print_table(full, reference="oracle")
-
-    oracle = nominal["oracle"]
-    if len(oracle["solve_ms"]) == 0:
-        return
-    ref_t = oracle["t"]
-    ref_within = oracle["solve_ms"] <= CONTROL_PERIOD_MS
-
-    for label, mask_val in [("oracle WITHIN its 100ms budget", True),
-                            ("oracle OVER its 100ms budget", False)]:
-        n_ref = int((ref_within == mask_val).sum())
-        print(f"\n--- restricted to ticks where {label} "
-             f"({n_ref}/{len(ref_within)} oracle ticks) ---")
-        if n_ref == 0:
-            print("  0 ticks in this run -- skipping")
-            continue
-        windows = {}
-        for name, r in nominal.items():
-            labels = _label_by_nearest(r["t"], ref_t, ref_within)
-            windows[name] = _window_summary(r, labels == mask_val)
-        _print_table(windows, reference="oracle")
 
 
 # ---------------------------------------------------------------------------
-# Point 4: nominal vs disturbed robustness
+# Point 3: nominal vs disturbed robustness
 # ---------------------------------------------------------------------------
 def report_robustness(results, disturbed_runs):
     """disturbed_runs[name] is a *list* of analyze() results, one per disturbed
     bag -- disturbances aren't seeded (see _all()), so each trial is a different
     realization and gets averaged over rather than treated as definitive."""
     print("\n" + "=" * 70)
-    print("4) Robustness to disturbances (nominal vs disturbed, averaged over")
+    print("3) Robustness to disturbances (nominal vs disturbed, averaged over")
     print("   all disturbed runs found -- each is an unseeded, different draw)")
     print("=" * 70)
     any_pair = False
@@ -417,17 +378,43 @@ def report_robustness(results, disturbed_runs):
 # ---------------------------------------------------------------------------
 # CLI / driver
 # ---------------------------------------------------------------------------
-def _latest(bag_dir, controller, condition):
-    matches = sorted(glob.glob(os.path.join(bag_dir, f"{controller}_{condition}_*.bag")))
+def _latest(bag_dir, controller, condition, prefix=""):
+    matches = sorted(glob.glob(os.path.join(bag_dir, f"{prefix}{controller}_{condition}_*.bag")))
     return matches[-1] if matches else None
 
 
-def _all(bag_dir, controller, condition):
+def _all(bag_dir, controller, condition, prefix=""):
     """Every matching bag, not just the latest -- disturbed runs aren't seeded
     (see currents.cpp/wind_and_waves.cpp: both reseed from std::random_device on
     every process start), so each disturbed trial is a different realization and
     the robustness comparison wants all of them, not just one."""
-    return sorted(glob.glob(os.path.join(bag_dir, f"{controller}_{condition}_*.bag")))
+    return sorted(glob.glob(os.path.join(bag_dir, f"{prefix}{controller}_{condition}_*.bag")))
+
+
+def _scenario_params(seed, index):
+    """Same y0/u_ref sample_scenario.py / aggregate_scenarios.py would derive for
+    this seed/index -- re-derived here rather than stored, since the RNG draw is
+    deterministic (see anmpc_compare_to_oracle.sample_scenario)."""
+    rng = np.random.default_rng(seed)
+    sc = None
+    for _ in range(index + 1):
+        sc = sample_scenario(rng)
+    return sc["path"].y0, sc["path"].u_ref
+
+
+class _Tee:
+    """Mirrors writes to multiple streams -- lets the report's prints reach the
+    terminal as usual while also collecting them for the sibling .txt save."""
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data):
+        for s in self._streams:
+            s.write(data)
+
+    def flush(self):
+        for s in self._streams:
+            s.flush()
 
 
 def main():
@@ -442,18 +429,48 @@ def main():
                              "runs (disturbances aren't seeded, so each is a different "
                              "realization -- default: every matching bag in --bag_dir)")
     ap.add_argument("--params", default=PARAMS_YAML)
+    ap.add_argument("--seed", type=int, default=None,
+                    help="if set, re-derive y0/u_ref via anmpc_compare_to_oracle.sample_scenario "
+                         "(same draw run_scenario.sh / aggregate_scenarios.py use) instead of "
+                         "reading --params, and auto-discover scenario{seed}_{index}_*.bag bags "
+                         "instead of plain {controller}_{condition}_*.bag -- i.e. give --seed/--index "
+                         "alone to compare a run_scenario.sh scenario, no --y0/--u_ref needed")
+    ap.add_argument("--index", type=int, default=0,
+                    help="which draw from --seed's RNG stream to use (0-based); only with --seed")
     ap.add_argument("--y0", type=float, default=None,
-                    help="override path/y_offset from --params -- for bags recorded with "
-                         "compare_run.launch's y0:=... (e.g. a compare_to_oracle.py scenario)")
+                    help="override path/y_offset from --params (or --seed's derived value) -- for "
+                         "bags recorded with compare_run.launch's y0:=...")
     ap.add_argument("--u_ref", type=float, default=None,
-                    help="override parameters_model/u_ref from --params, same reason as --y0")
-    ap.add_argument("--out", default=os.path.join(PLOTS_DIR, "compare_controllers.png"))
+                    help="override parameters_model/u_ref from --params (or --seed's derived "
+                         "value), same reason as --y0")
+    ap.add_argument("--out", default=None,
+                    help="output PNG path (default: compare_controllers.png, or "
+                         "compare_controllers_scenario<seed>_<index>.png with --seed); "
+                         "the printed report is also saved alongside it as the same "
+                         "name with a .txt extension")
     args = ap.parse_args()
 
     with open(args.params) as fh:
         p = yaml.safe_load(fh)
-    y0 = args.y0 if args.y0 is not None else p["path"]["y_offset"]
-    u_ref = args.u_ref if args.u_ref is not None else p["parameters_model"]["u_ref"]
+
+    bag_prefix = ""
+    y0, u_ref = args.y0, args.u_ref
+    if args.seed is not None:
+        sc_y0, sc_u_ref = _scenario_params(args.seed, args.index)
+        y0 = y0 if y0 is not None else sc_y0
+        u_ref = u_ref if u_ref is not None else sc_u_ref
+        bag_prefix = f"scenario{args.seed}_{args.index}_"
+
+    if args.out is not None:
+        out_path = args.out
+    elif args.seed is not None:
+        out_path = os.path.join(
+            PLOTS_DIR, f"compare_controllers_scenario{args.seed}_{args.index}.png")
+    else:
+        out_path = os.path.join(PLOTS_DIR, "compare_controllers.png")
+
+    y0 = y0 if y0 is not None else p["path"]["y_offset"]
+    u_ref = u_ref if u_ref is not None else p["parameters_model"]["u_ref"]
     path_vec = np.array([p["path"]["x_multiplier"], y0, u_ref])
     weights = (p["parameters_mpc"]["Qye"], p["parameters_mpc"]["Qr"],
               p["parameters_mpc"]["Qpsi"], p["parameters_mpc"]["Qu"])
@@ -463,23 +480,31 @@ def main():
 
     results = {}
     disturbed_runs = {name: [] for name in CONTROLLERS}
-    for name in CONTROLLERS:
-        nom_path = getattr(args, f"{name}_nominal") or _latest(args.bag_dir, name, "nominal")
-        if nom_path:
-            print(f"analyzing {name}/nominal: {nom_path}")
-            results[("nominal", name)] = analyze(name, nom_path, path_vec, weights, r_f, r_ego)
+    report_buf = io.StringIO()
+    with contextlib.redirect_stdout(_Tee(sys.stdout, report_buf)):
+        for name in CONTROLLERS:
+            nom_path = getattr(args, f"{name}_nominal") or _latest(args.bag_dir, name, "nominal", bag_prefix)
+            if nom_path:
+                print(f"analyzing {name}/nominal: {nom_path}")
+                results[("nominal", name)] = analyze(name, nom_path, path_vec, weights, r_f, r_ego)
 
-        dis_paths = getattr(args, f"{name}_disturbed") or _all(args.bag_dir, name, "disturbed")
-        for dis_path in dis_paths:
-            print(f"analyzing {name}/disturbed: {dis_path}")
-            disturbed_runs[name].append(analyze(name, dis_path, path_vec, weights, r_f, r_ego))
+            dis_paths = getattr(args, f"{name}_disturbed") or _all(args.bag_dir, name, "disturbed", bag_prefix)
+            for dis_path in dis_paths:
+                print(f"analyzing {name}/disturbed: {dis_path}")
+                disturbed_runs[name].append(analyze(name, dis_path, path_vec, weights, r_f, r_ego))
 
-    if not results and not any(disturbed_runs.values()):
-        ap.error(f"no bags found in {args.bag_dir} and none given explicitly")
+        if not results and not any(disturbed_runs.values()):
+            ap.error(f"no {bag_prefix}*.bag bags found in {args.bag_dir} and none given explicitly")
 
-    report_solve_times(results)
-    report_cost_vs_oracle(results)
-    report_robustness(results, disturbed_runs)
+        report_solve_times(results)
+        report_cost_vs_oracle(results)
+        report_robustness(results, disturbed_runs)
+
+    txt_path = os.path.splitext(out_path)[0] + ".txt"
+    os.makedirs(os.path.dirname(os.path.abspath(txt_path)) or ".", exist_ok=True)
+    with open(txt_path, "w") as fh:
+        fh.write(report_buf.getvalue())
+    print(f"saved {txt_path}")
 
     try:
         import matplotlib
@@ -497,7 +522,8 @@ def main():
     ax_cost, ax_speed, ax_dist = axes[1, 0], axes[1, 1], axes[1, 2]
     ax_dist.axis("off")
 
-    s_max = max(r["states"][:, 0].max() for r in nominal.values() if len(r["states"]))
+    x_max = max(r["states"][:, 0].max() for r in nominal.values() if len(r["states"]))
+    s_max = x_max / path_vec[0]  # states[:, 0] is X = kx*s, not s itself
     s_grid = np.linspace(0, s_max + 2, 600)
     ax_traj.plot(path_vec[0] * s_grid, np.sin(path_vec[0] * s_grid) + path_vec[1],
                 "k--", lw=1, label="reference path")
@@ -553,12 +579,12 @@ def main():
     ax_speed.set_title("Speed tracking")
 
     fig.tight_layout()
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
-    fig.savefig(args.out, dpi=130)
-    print(f"\nsaved {args.out}")
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    fig.savefig(out_path, dpi=130)
+    print(f"\nsaved {out_path}")
 
     if any(disturbed_runs.values()):
-        dist_out = os.path.splitext(args.out)[0] + "_disturbed_traj.png"
+        dist_out = os.path.splitext(out_path)[0] + "_disturbed_traj.png"
         _plot_disturbed_trajectories(disturbed_runs, path_vec, dist_out)
 
 
