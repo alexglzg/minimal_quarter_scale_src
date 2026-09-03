@@ -1,32 +1,46 @@
 <launch>
   <!-- Global buoy list: single source of truth shared by buoy_simulator.py (spawns/moves
        the buoys) and wind_and_waves (computes each buoy's simplified wind/wave force). -->
-  <rosparam param="/buoys">
+  <arg name="buoys_yaml" default=""
+       doc="YAML list of buoys (name/radius/mass/initial_state), any length, overriding the
+            default 6 static buoys below when non-empty -- lets callers (e.g.
+            control/launch/compare_run.launch) reuse this file's buoy_sim/collision_checker
+            wiring for a different scenario without duplicating it." />
+
+  <!-- 6 buoys total, matching n_obs=6 that anmpc_alpha/model.eqx and
+       barriernet/model.eqx were both trained with (see their model_meta.yaml).
+       Positions match barriernet_ampc_compare_models.ipynb's own obs_centers
+       cell literally: X_obs=[5,10,...,30], Y = np.sin(X_obs) + y0 + lat
+       (y0=3.0, lat=0.2*[1,-1,1,-1,1,-1]): no kx factor in the sin(), even
+       though the reference path itself is y = sin(kx*s) + y0. -->
+  <rosparam param="/buoys" unless="$(eval buoys_yaml != '')">
     - name: buoy1
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [6.0, 2.92, 0.0, 0.0]
-    <!-- - name: buoy2
-      radius: 0.9
+      initial_state: [5.0, 2.241076, 0.0, 0.0]
+    - name: buoy2
+      radius: 0.6
       mass: 10.0
-      initial_state: [10.0, 3.2, 0.0, 0.0]
+      initial_state: [10.0, 2.255979, 0.0, 0.0]
     - name: buoy3
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [10.0, -2.4, 0.0, 0.0]
+      initial_state: [15.0, 3.850288, 0.0, 0.0]
     - name: buoy4
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [4.0, -2.4, 0.0, 0.0]
+      initial_state: [20.0, 3.712945, 0.0, 0.0]
     - name: buoy5
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [7.0, -4.0, 0.0, 0.0]
+      initial_state: [25.0, 3.067648, 0.0, 0.0]
     - name: buoy6
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [15.0, -4.0, 0.0, 0.0] -->
+      initial_state: [30.0, 1.811968, 0.0, 0.0]
   </rosparam>
+
+  <rosparam param="/buoys" subst_value="true" if="$(eval buoys_yaml != '')">$(arg buoys_yaml)</rosparam>
 
   <node pkg="obstacle_detector" type="buoy_simulator.py" name="buoy_sim" output="screen" />
 
@@ -34,24 +48,29 @@
   <node pkg="obstacle_detector" type="collision_checker.py" name="collision_checker" output="screen" />
 </launch>
 
-
-    <!-- - name: buoy1
-      radius: 0.5
+<!-- Buoys for the anmpc vs barriernet comparison notebook (barriernet_ampc_compare_models.ipynb)
+    - name: buoy1
+      radius: 0.6
       mass: 10.0
-      initial_state: [4.0, 0.2, 0.0, 0.0]
+      initial_state: [5.0, 2.241076, 0.0, 0.0]
     - name: buoy2
-      radius: 0.9
+      radius: 0.6
       mass: 10.0
-      initial_state: [10.0, 0.2, 0.0, 0.0]
+      initial_state: [10.0, 2.255979, 0.0, 0.0]
     - name: buoy3
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [10.0, -2.4, 0.0, 0.0]
+      initial_state: [15.0, 3.850288, 0.0, 0.0]
     - name: buoy4
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [4.0, -2.4, 0.0, 0.0]
+      initial_state: [20.0, 3.712945, 0.0, 0.0]
     - name: buoy5
-      radius: 0.5
+      radius: 0.6
       mass: 10.0
-      initial_state: [7.0, -1.0, 0.0, 0.0] -->
+      initial_state: [25.0, 3.067648, 0.0, 0.0]
+    - name: buoy6
+      radius: 0.6
+      mass: 10.0
+      initial_state: [30.0, 1.811968, 0.0, 0.0]
+  </rosparam> -->

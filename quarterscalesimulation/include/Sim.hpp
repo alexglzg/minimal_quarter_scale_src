@@ -47,6 +47,15 @@ private:
   double u_c = 0.0;
   double v_c = 0.0;
 
+  // Held true only once a real /mpc_force command has been received. Some
+  // scenarios seed state[3] (surge velocity, see /su_0) non-zero to match a
+  // controller's training initial condition (e.g. anmpc_alpha/model.eqx was
+  // trained from su=0.3); without this gate the sim would integrate that
+  // residual momentum against zero thrust and drift forward on its own
+  // before any controller starts commanding. integrate() is skipped (state
+  // held exactly at its seeded values) until this flips true.
+  bool force_received = false;
+
   ros::Publisher twist_pub;
   ros::Publisher pose_pub;
   ros::Publisher pub_VelocityRviz;

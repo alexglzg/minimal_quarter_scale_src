@@ -115,6 +115,7 @@ void Sim::forceCallback(const roboat_core::Force::ConstPtr &msg)
   // last indices of state represent force
   for (int i = 0; i < 4; i++)
     state[i + 6] = msg->data[i];
+  force_received = true;
 }
 
 void Sim::dist_callback(const geometry_msgs::Pose2D::ConstPtr &delta)
@@ -169,6 +170,12 @@ Sim::Sim(ros::NodeHandle n)
   n.param("/x_0", state[0], 0.0);
   n.param("/y_0", state[1], -3.0);
   n.param("/psi", state[2], 0.0);
+  // Surge velocity the vessel is seeded with. Held frozen (not integrated,
+  // see force_received) until the first real /mpc_force arrives, so a
+  // non-zero value here doesn't drift the boat before any controller is
+  // actually commanding it -- see compare_to_oracle.py's sample_scenario(),
+  // whose su=0.3 initial condition anmpc_alpha/model.eqx was trained on.
+  n.param("/su_0", state[3], 0.0);
   n.param("system_dynamics/d11", d11);
   n.param("system_dynamics/d22", d22);
   n.param("system_dynamics/d33", d33);
@@ -208,8 +215,12 @@ Sim::Sim(ros::NodeHandle n)
     lastTime = currentTime;
     currentTime = ros::Time::now();
 
-    // calculate new state as integration of state, over time using system model
-    state = integrate(state, (currentTime - lastTime).toSec());
+    // calculate new state as integration of state, over time using system model.
+    // Skipped until the first real /mpc_force arrives (see force_received): a
+    // non-zero seeded surge velocity (/su_0) would otherwise drift the vessel
+    // forward under zero thrust before any controller is actually commanding it.
+    if (force_received)
+      state = integrate(state, (currentTime - lastTime).toSec());
 
     // publish new twist (velocity)
     geometry_msgs::TwistStamped twist_msg;

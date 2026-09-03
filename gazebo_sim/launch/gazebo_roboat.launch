@@ -5,10 +5,10 @@
            command="$(find xacro)/xacro --inorder '$(find gazebo_sim)/urdf/roboat.urdf.xacro'" />
 
 
-    <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model"
+    <!-- <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model"
               args="-urdf -model roboat -param robot_description -x 0 -y 0.1 -z 0.15" />
 
-    <node name="qs_gazebo_broadcaster" type="qs_gazebo_broadcaster" pkg="quarterscalesimulation" />
+    <node name="qs_gazebo_broadcaster" type="qs_gazebo_broadcaster" pkg="quarterscalesimulation" /> -->
 
     <param name = "/x_0" value = "0.0" />
     <param name = "/y_0" value = "3.0" />

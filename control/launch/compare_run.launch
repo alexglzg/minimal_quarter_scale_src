@@ -1,0 +1,114 @@
+<launch>
+    <!-- One run of the oracle/anmpc/barriernet comparison: same vessel dynamics sim,
+         same 6 static buoys, same start pose, one controller, timed rosbag record.
+         Run this once per controller (nominal), and again per controller with
+         disturbed:=true for the robustness comparison, then post-process the bags
+         with control/scripts/compare_controllers.py. See that script's docstring
+         for the full recipe. -->
+    <arg name="controller" doc="which controller to run: oracle | anmpc | barriernet" />
+    <arg name="duration" default="90" doc="seconds to record before auto-shutdown" />
+    <arg name="bag_dir" default="$(env HOME)/compare_bags" />
+    <arg name="rviz" default="false" />
+    <arg name="disturbed" default="false"
+         doc="true: also run wind_and_waves + currents (their file defaults: 2kn wind, no gusts, stddev_cur=1.0) for a robustness trial against the nominal (disturbed:=false) one" />
+    <arg name="condition" default="$(eval 'disturbed' if disturbed else 'nominal')" />
+    <arg name="record" default="true" doc="false: don't record, just run the sim and controller" />
+    <arg name="sim_start_delay" default="8"
+         doc="seconds to hold qs_sim_node and bag_record back so the simulated
+              clock/recording only start once every controller's own startup
+              cost (oracle: CasADi to_function compile ~1-2s; anmpc/barriernet:
+              JAX JIT warm-up, anmpc ~5s worst case) is already done. Without
+              this, a fixed recording duration silently gives each controller a
+              different amount of *active* control time within it, making
+              cross-controller comparisons unfair in a way that isn't visible
+              from the bag length alone." />
+
+    <arg name="y0" default="3.0" doc="path/y_offset and start Y; override per scenario" />
+    <arg name="su0" default="0.0" doc="initial surge velocity [m/s] the vessel is seeded
+         with (qs_sim_node/Sim.cpp's /su_0 param) -- 0.0 matches its long-standing
+         always-starts-at-rest behavior; set to 0.3 to match
+         compare_to_oracle.py's sample_scenario() / what anmpc_alpha's model was
+         trained on. The vessel does NOT drift under this residual momentum before
+         a controller starts commanding: qs_sim_node holds state frozen until the
+         first real /mpc_force arrives (see Sim.cpp's force_received gate)." />
+    <arg name="u_ref" default="0.6" doc="parameters_model/u_ref; override per scenario" />
+    <arg name="num_obstacles" default="6" doc="parameters_mpc/num_obstacles -- how many CBF
+         slots the oracle carries (unused ones are dummy-padded far away); anmpc/barriernet
+         always use their trained n_obs=6 regardless of this, padding by duplication if
+         obstacles_yaml has fewer than 6 real buoys." />
+    <arg name="obstacles_yaml" default=""
+         doc="YAML list of buoys (name/radius/mass/initial_state), any length, replacing the
+              default 6 static buoys from moving_buoys.launch when non-empty. Also set
+              num_obstacles to match its length for the oracle. MUST be single-line YAML
+              flow style (roslaunch's own CLI arg:=value parser silently drops everything
+              after the first newline in a multi-line value, so block-style YAML across
+              several lines breaks silently -- flow style has no such issue). Example for
+              one scenario from control/scripts/compare_to_oracle.py's sample_scenario():
+              [{name: buoy1, radius: 0.73, mass: 10.0, initial_state: [5.03, 2.39, 0.0, 0.0]}, {name: buoy2, radius: 0.77, mass: 10.0, initial_state: [9.20, 3.16, 0.0, 0.0]}, {name: buoy3, radius: 0.64, mass: 10.0, initial_state: [13.36, 4.05, 0.0, 0.0]}]" />
+    <arg name="scenario_id" default="" doc="if set, bag is named scenarioN_controller_condition
+         instead of controller_condition." />
+    <arg name="bag_prefix" default="$(eval ('scenario' + str(scenario_id) + '_') if scenario_id != '' else '')" />
+
+    <rosparam file="$(find control)/config/parameters.yaml" command="load" />
+    <param name="path/y_offset" value="$(arg y0)" />
+    <param name="parameters_model/u_ref" value="$(arg u_ref)" />
+    <param name="parameters_mpc/num_obstacles" value="$(arg num_obstacles)" />
+
+    <!-- Same nodes as gazebo_sim/launch/gazebo_roboat.launch, minus Gazebo itself
+         (no urdf_spawner, no qs_gazebo_broadcaster, no gzserver). -->
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder '$(find gazebo_sim)/urdf/roboat.urdf.xacro'" />
+
+    <param name="/x_0" value="0.0" />
+    <param name="/y_0" value="$(arg y0)" />
+    <param name="/psi" value="0.7854" />
+    <param name="/su_0" value="$(arg su0)" />
+
+    <node name="qs_sim_node" type="qs_sim_node" pkg="quarterscalesimulation"
+          launch-prefix="bash -c 'sleep $(arg sim_start_delay); $0 $@'" />
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+    <node name="rviz" pkg="rviz" type="rviz"
+          args="-d $(find quarterscalesimulation)/rviz/quatersimulatorforcontrol.rviz"
+          if="$(arg rviz)" />
+
+    <include file="$(find quarterscalesimulation)/launch/wind_and_waves.launch" if="$(arg disturbed)" />
+    <include file="$(find quarterscalesimulation)/launch/currents.launch" if="$(arg disturbed)" />
+    <include file="$(find quarterscalesimulation)/launch/env_markers.launch" />
+
+    <!-- Default: 6 static buoys, same positions every run. Scenario runs (obstacles_yaml
+         non-empty) replace them with an inline buoy list of whatever length instead;
+         moving_buoys.launch itself handles the switch (see its buoys_yaml arg). -->
+    <include file="$(find obstacle_detector)/launch/moving_buoys.launch">
+        <arg name="buoys_yaml" value="$(arg obstacles_yaml)" />
+    </include>
+
+    <!-- Controller under test. mpc_oracle_node does NOT use alpha_node/'/cbf_alphas':
+         that topic is specific to mpc_opti_chocbf_dcbf_core.py; the oracle instead uses
+         mpc_oracle.VesselNMPC's own default_gamma HOCBF gains. -->
+    <node pkg="control" type="mpc_oracle_node.py" name="mpc_oracle_node" output="screen"
+          if="$(eval controller == 'oracle')" />
+
+    <node pkg="control" type="anmpc_alpha_node.py" name="anmpc_node" output="screen"
+          if="$(eval controller == 'anmpc')" />
+
+    <node pkg="control" type="barriernet_node.py" name="barriernet_node" output="screen"
+          if="$(eval controller == 'barriernet')" />
+
+    <!-- Records everything compare_controllers.py needs; required="true" means the
+         whole launch (sim + buoys + controller) shuts down the moment the recording
+         hits `duration` and rosbag record exits, so one command runs the full trial. -->
+    <node pkg="rosbag" type="record" name="bag_record" required="true" output="screen"
+          launch-prefix="bash -c 'mkdir -p $(arg bag_dir); sleep $(arg sim_start_delay); $0 $@'"
+          args="--duration=$(arg duration) -o $(arg bag_dir)/$(arg bag_prefix)$(arg controller)_$(arg condition)
+                /mpc_force /odometry/filtered /buoy_array /desired_path /collision_detected
+                /mpc_status/solve_time_ms /mpc_status/success
+                /mpc_status_oracle/solve_time_ms /mpc_status_oracle/success
+                /mpc_status_anmpc/solve_time_ms /mpc_status_anmpc/model_solve_time_ms
+                /mpc_status_anmpc/success /mpc_status_anmpc/gammas
+                /mpc_status_barriernet/solve_time_ms /mpc_status_barriernet/model_solve_time_ms
+                /mpc_status_barriernet/success /mpc_status_barriernet/gammas
+                /mpc_status_barriernet/intervention_n" 
+                if="$(arg record)"/>
+</launch>

@@ -1,0 +1,13 @@
+<launch>
+    <!-- Load path/model parameters (global for simplicity) -->
+    <rosparam file="$(find control)/config/parameters.yaml" command="load" />
+
+    <!-- BarrierNet controller node (drop barriernet/model.eqx +
+         model_meta.yaml into control/scripts/barriernet/ before running this) -->
+    <node pkg="control"
+          type="barriernet_node.py"
+          name="barriernet_node"
+          output="screen">
+    </node>
+
+</launch>

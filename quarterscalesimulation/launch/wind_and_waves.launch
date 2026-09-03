@@ -18,7 +18,7 @@
     <param name = "buoy_CD" value = "0.5" />
 
     <!-- Wind gusts: slow OU background + Poisson gust bursts -->
-    <!-- <param name = "gust_mu_speed" value = "0.08" />
+    <param name = "gust_mu_speed" value = "0.08" />
     <param name = "gust_stddev_speed" value = "1.5" />
     <param name = "gust_mu_dir" value = "0.06" />
     <param name = "gust_stddev_dir" value = "0.6" />
@@ -30,14 +30,14 @@
     <param name = "gust_duration_min" value = "2.0" />
     <param name = "gust_duration_max" value = "6.0" />
     <param name = "gust_dir_offset_max" value = "0.4" />
-    </node> -->
+    </node>
 
 
     <!-- Wind gusts disabled: zero noise + zero trigger rate pins V_wind/beta_wind
          at V_wind_knots/beta_wind above, same as pre-gust behavior -->
-    <param name = "gust_stddev_speed" value = "0.0" />
+    <!-- <param name = "gust_stddev_speed" value = "0.0" />
     <param name = "gust_stddev_dir" value = "0.0" />
     <param name = "gust_rate" value = "0.0" />
-    </node>
+    </node> -->
 
 </launch>

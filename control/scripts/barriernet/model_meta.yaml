@@ -1,0 +1,12 @@
+# Metadata needed to reconstruct the BarrierNet skeleton before loading this
+# directory's model.eqx. These MUST match the values the model was trained with
+# (source run: examples/vessel_avoidance/data/20260709_105505, combo i64_bs256_s0,
+# training_status: success, best_val_mse: 0.0040, post-DAgger).
+#
+# Same task, same data, same plant as ../anmpc_alpha/model.eqx + model_meta.yaml
+# (ana_i64) — the two checkpoints are directly comparable. No cost weights appear
+# here: BarrierNet has no analytic baseline, so nothing in the skeleton depends on them.
+solver: i64            # BarrierNet (MLP -> u_nom + class-K gains -> projection QP)
+n_obs: 6               # number of obstacles the QP / features are sized for (fixed)
+dt: 0.1                # control step [s]
+f_max: 6.0             # symmetric thruster force limit [N]
