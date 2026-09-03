@@ -542,7 +542,7 @@ def _demo():
     ax.legend(loc="upper left", fontsize=8)
     fig.tight_layout()
     import os
-    plots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "plots", "oracle")
+    plots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "plots", "oracle")
     os.makedirs(plots_dir, exist_ok=True)
     out = os.path.join(plots_dir, "oracle_prediction.png")
     fig.savefig(out, dpi=130)

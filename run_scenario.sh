@@ -48,7 +48,7 @@ ALL=false
 DISTURBED=false
 DURATION=40
 SCENARIO_ID=""
-BAG_DIR="$HOME/compare_bags"
+BAG_DIR="$(pwd)/compare_bags"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

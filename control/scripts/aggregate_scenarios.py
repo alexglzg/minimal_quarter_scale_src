@@ -66,7 +66,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--indices", required=True)
-    ap.add_argument("--bag_dir", default=os.path.expanduser("~/compare_bags"))
+    ap.add_argument("--bag_dir", default=os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "..", "..", "compare_bags"))
     ap.add_argument("--condition", default="nominal", choices=["nominal", "disturbed"])
     ap.add_argument("--params", default=PARAMS_YAML)
     ap.add_argument("--out", default="aggregate_scenarios.csv")

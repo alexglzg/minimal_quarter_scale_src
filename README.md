@@ -63,7 +63,7 @@ YAML flow style (`[{...}, {...}]`), not block style: roslaunch's own CLI
 multi-line value.
 
 Bags land
-in `~/compare_bags` as `scenario<ID>_<controller>_<nominal|disturbed>_<timestamp>.bag`.
+in `compare_bags/` (inside this repo) as `scenario<ID>_<controller>_<nominal|disturbed>_<timestamp>.bag`.
 
 ### Compare the controllers from one scenario
 
@@ -71,7 +71,7 @@ in `~/compare_bags` as `scenario<ID>_<controller>_<nominal|disturbed>_<timestamp
 
 `--seed`/`--index` re-derive y0/u_ref the same way `run_scenario.sh` (and
 `sample_scenario()`) do, and auto-discover that scenario's own bags in
-`--bag_dir` (default `~/compare_bags`) by their `scenario<seed>_<index>_...`
+`--bag_dir` (default `compare_bags/` in this repo) by their `scenario<seed>_<index>_...`
 prefix -- both nominal (latest per controller) and disturbed (all matches per
 controller) are searched automatically, so no manual y0/u_ref lookup or bag
 paths are needed. Any controller/condition whose bag isn't found is skipped
@@ -82,9 +82,9 @@ point at specific bags instead of auto-discovering, pass paths and
 `--y0`/`--u_ref` explicitly instead:
 
     python3 control/scripts/compare_controllers.py \
-      --oracle_nominal ~/compare_bags/scenario<ID>_oracle_nominal_*.bag \
-      --anmpc_nominal ~/compare_bags/scenario<ID>_anmpc_nominal_*.bag \
-      --barriernet_nominal ~/compare_bags/scenario<ID>_barriernet_nominal_*.bag \
+      --oracle_nominal compare_bags/scenario<ID>_oracle_nominal_*.bag \
+      --anmpc_nominal compare_bags/scenario<ID>_anmpc_nominal_*.bag \
+      --barriernet_nominal compare_bags/scenario<ID>_barriernet_nominal_*.bag \
       --y0 <Y0> --u_ref <U_REF>
 
 Prints closed-loop cost/clearance/effort/solve-time tables and saves a
@@ -111,9 +111,21 @@ summary: mean closed-loop cost, cost ratio vs. oracle, collision rate, and
 solve-time mean/p95/max/over-100ms-budget-fraction, per controller.
 `--indices` accepts `0-99`, `0,3,7`, or a mix like `0-9,20,30-35`.
 
+`./run_all_scenarios.sh` wraps this same loop for an unattended/overnight
+batch: one nominal pass plus several repeated disturbed passes (each an
+independent random draw) over a range of scenarios, logging each run
+separately and resuming from where it left off if interrupted.
+
+    nohup ./run_all_scenarios.sh --seed 0 --n_scenarios 25 --n_disturbed 3 \
+      > overnight.log 2>&1 &
+    disown
+
+See `./run_all_scenarios.sh --help` for all flags (`--force` to redo
+already-completed runs, `--skip_nominal`/`--skip_disturbed`, etc.).
+
 ### Plots
 
-All comparison plots are written to `../plots/` (one level above this repo),
+All comparison plots are written to `plots/` (inside this repo),
 organized as `plots/comparisons/` (multi-controller plots -- almost
 everything above) and `plots/oracle/` / `plots/anmpc/` / `plots/barriernet/`
 (single-controller-only plots). Created automatically; pass `--out` to any

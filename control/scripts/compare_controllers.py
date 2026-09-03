@@ -91,9 +91,8 @@ PARAMS_YAML = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "config", "parameters.yaml")
 
 # All three controllers together -> a comparison, not any one controller's own plot.
-# One level above the repo (src/) itself, not inside it.
 PLOTS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "plots", "comparisons")
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "plots", "comparisons")
 
 CONTROL_PERIOD_MS = 100.0  # 10 Hz control loop budget, same as mpc_status_dashboard.py
 
@@ -420,7 +419,8 @@ class _Tee:
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bag_dir", default=os.path.expanduser("~/compare_bags"),
+    ap.add_argument("--bag_dir", default=os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "..", "..", "compare_bags"),
                     help="directory to auto-discover {controller}_{nominal,disturbed}_*.bag in")
     for name in CONTROLLERS:
         ap.add_argument(f"--{name}_nominal")

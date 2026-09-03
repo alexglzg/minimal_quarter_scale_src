@@ -26,11 +26,27 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# Source the workspace explicitly -- this script is meant to be launched via
+# nohup/background, which does not re-read ~/.bashrc, so don't rely on the
+# invoking shell having sourced it already.
+WS_SETUP="$(cd .. && pwd)/devel/setup.bash"
+if [[ -f "$WS_SETUP" ]]; then
+  # ROS's own setup chain references unset vars internally (LD_LIBRARY_PATH,
+  # PYTHONPATH, etc.) -- relax -u just for sourcing it.
+  set +u
+  # shellcheck disable=SC1090
+  source "$WS_SETUP"
+  set -u
+else
+  echo "error: workspace setup not found at $WS_SETUP -- build the workspace first (catkin_make/catkin build)." >&2
+  exit 1
+fi
+
 SEED=0
 N_SCENARIOS=25
 N_DISTURBED=3
 DURATION=40
-BAG_DIR="$HOME/compare_bags"
+BAG_DIR="$(pwd)/compare_bags"
 MARKER_DIR=""
 LOG_DIR=""
 FORCE=false

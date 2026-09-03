@@ -47,7 +47,7 @@ from mpc_oracle import (VesselNMPC, VesselParams, PathParams, CostWeights,
 
 HERE = Path(__file__).resolve().parent
 # oracle + amortized model together -> a comparison, not either one's own plot.
-PLOTS_DIR = HERE / ".." / ".." / ".." / "plots" / "comparisons"
+PLOTS_DIR = HERE / ".." / ".." / "plots" / "comparisons"
 
 # In-distribution sampling ranges (from the training config).
 Y0_RANGE     = (2.5, 3.5)
