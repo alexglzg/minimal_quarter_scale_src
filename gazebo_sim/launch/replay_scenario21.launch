@@ -1,0 +1,26 @@
+<launch>
+    <!-- Spawns the roboat and scenario 21's 3 buoys into an already-running
+         lake world (roslaunch gazebo_sim lake.launch), and bridges their
+         live ROS state into Gazebo's /gazebo/set_model_state so they track
+         whatever is publishing odometry/filtered and /buoy_array: a live
+         run, or (as here) `rosbag play` replaying a recorded one.
+         qs_gazebo_broadcaster does this for the boat already; obstacle_detector's
+         buoy_gazebo_broadcaster.py is the same idea for the buoys (nothing
+         replay-specific about either one, they just bridge whatever is live
+         on those topics). -->
+
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder '$(find gazebo_sim)/urdf/roboat.urdf.xacro'" />
+    <node name="spawn_roboat" pkg="gazebo_ros" type="spawn_model"
+          args="-urdf -param robot_description -model roboat -x 0 -y 3 -z 0.15" />
+
+    <node name="spawn_buoy1" pkg="gazebo_ros" type="spawn_model"
+          args="-urdf -file $(find gazebo_sim)/urdf/buoy1.urdf -model buoy1 -x 6.93 -y -2.68 -z 0.0" />
+    <node name="spawn_buoy2" pkg="gazebo_ros" type="spawn_model"
+          args="-urdf -file $(find gazebo_sim)/urdf/buoy2.urdf -model buoy2 -x 11.18 -y -1.87 -z 0.0" />
+    <node name="spawn_buoy3" pkg="gazebo_ros" type="spawn_model"
+          args="-urdf -file $(find gazebo_sim)/urdf/buoy3.urdf -model buoy3 -x 15.44 -y -3.53 -z 0.0" />
+
+    <node name="qs_gazebo_broadcaster" pkg="quarterscalesimulation" type="qs_gazebo_broadcaster" />
+    <node name="buoy_gazebo_broadcaster" pkg="obstacle_detector" type="buoy_gazebo_broadcaster.py" output="screen" />
+</launch>
