@@ -131,6 +131,14 @@ def _read_force(bag):
     return [(t.to_sec(), np.array(msg.data)) for _, msg, t in bag.read_messages(topics=["/mpc_force"])]
 
 
+def _read_multiarray(bag, topic):
+    """[(t, np.array)] for any Float64MultiArray-shaped topic (.data field) --
+    same shape as _read_force, generalized for e.g. /mpc_status_barriernet/u_nom.
+    Returns [] for a topic absent from this bag (older bags predating a given
+    publisher), same as any other missing-topic read here."""
+    return [(t.to_sec(), np.array(msg.data)) for _, msg, t in bag.read_messages(topics=[topic])]
+
+
 def _read_buoys(bag):
     """(times, centers_list, radii_list) -- every /buoy_array message, in NED.
     centers_list[i]/radii_list[i] are the (n,2)/(n,) arrays at times[i]. Buoys
@@ -185,6 +193,11 @@ def analyze(name, bag_path, path_vec, weights, r_f, r_ego):
         _, success = unzip(_read_series(bag, f"/{ns}/success", "data"))
         odom = _read_odometry(bag)
         force = _read_force(bag)
+        # barriernet-only: its raw (pre-CBF-projection) nominal command, so the
+        # CBF's correction direction is visible, not just its magnitude
+        # (/mpc_status_barriernet/intervention_n). [] for anything else, or for
+        # a barriernet bag recorded before this publisher existed.
+        u_nom_series = _read_multiarray(bag, f"/{ns}/u_nom") if name == "barriernet" else []
         buoy_t, buoy_centers, buoy_radii = _read_buoys(bag)
         collided = any(v for _, v in _read_series(bag, "/collision_detected", "data"))
 
@@ -202,12 +215,16 @@ def analyze(name, bag_path, path_vec, weights, r_f, r_ego):
 
     force_t = [t for t, _ in force]
     force_u = [u for _, u in force]
+    u_nom_t = [t for t, _ in u_nom_series]
+    u_nom_v = [u for _, u in u_nom_series]
 
     tick_t = solve_t if len(solve_t) else odom_t_raw
     x_at_tick = (_nearest_value(odom_t_raw, list(odom_x), tick_t)
                 if len(odom_t_raw) else [np.zeros(6)] * len(tick_t))
     u_at_tick = (_nearest_value(force_t, force_u, tick_t)
                 if force_t else [np.zeros(4)] * len(tick_t))
+    u_nom_at_tick = (_nearest_value(u_nom_t, u_nom_v, tick_t)
+                    if u_nom_t else None)
 
     # Buoy snapshot nearest each tick, not a single static one -- see _read_buoys.
     buoy_idx_at_tick = (_nearest_value(buoy_t, list(range(len(buoy_t))), tick_t)
@@ -233,6 +250,7 @@ def analyze(name, bag_path, path_vec, weights, r_f, r_ego):
     clearance = np.array(clearance)
     xy_at_tick = np.array(xy_at_tick) if xy_at_tick else np.zeros((0, 2))
     u_at_tick = np.array(u_at_tick) if len(u_at_tick) else np.zeros((0, 4))
+    u_nom_at_tick = np.array(u_nom_at_tick) if u_nom_at_tick is not None else None
     tick_t_rel = tick_t - t0 if len(tick_t) else tick_t
 
     clr_valid = clearance[~np.isnan(clearance)] if len(clearance) else clearance
@@ -244,7 +262,7 @@ def analyze(name, bag_path, path_vec, weights, r_f, r_ego):
         min_clearance=float(clr_valid.min()) if len(clr_valid) else float("nan"),
         effort_rms=float(np.sqrt(np.mean(np.sum(u_at_tick ** 2, axis=1)))) if len(u_at_tick) else float("nan"),
         collision=collided, duration_s=float(odom_t[-1]) if len(odom_t) else float("nan"),
-        t=tick_t_rel, s=s_grid, cost=cost, clearance=clearance, u=u_at_tick,
+        t=tick_t_rel, s=s_grid, cost=cost, clearance=clearance, u=u_at_tick, u_nom=u_nom_at_tick,
         odom_t=odom_t, states=odom_x, centers=centers, radii=radii, r_ego=r_ego,
         xy=xy_at_tick, buoy_t=buoy_t, buoy_centers=buoy_centers, buoy_radii=buoy_radii,
         buoy_idx_at_tick=buoy_idx_at_tick,
@@ -518,6 +536,7 @@ def main():
         return
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 9))
+    fig.suptitle("Nominal condition (single run per controller, no disturbance)")
     ax_traj, ax_box, ax_solve = axes[0, 0], axes[0, 1], axes[0, 2]
     ax_cost, ax_speed, ax_dist = axes[1, 0], axes[1, 1], axes[1, 2]
     ax_dist.axis("off")
@@ -578,14 +597,60 @@ def main():
     ax_speed.set_xlabel("time [s]"); ax_speed.set_ylabel("surge speed [m/s]")
     ax_speed.set_title("Speed tracking")
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
     fig.savefig(out_path, dpi=130)
     print(f"\nsaved {out_path}")
 
+    actions_out = os.path.splitext(out_path)[0] + "_actions.png"
+    _plot_control_actions(nominal, actions_out)
+
     if any(disturbed_runs.values()):
         dist_out = os.path.splitext(out_path)[0] + "_disturbed_traj.png"
         _plot_disturbed_trajectories(disturbed_runs, path_vec, dist_out)
+
+
+def _plot_control_actions(nominal, out_path):
+    """One panel per thruster (control is a 4-vector, see roboat_core/Force.msg
+    -- 4 thruster forces, no more specific per-axis meaning is exposed above
+    Sim.cpp), each showing every controller's applied command u. barriernet
+    also gets its raw, pre-CBF-projection u_nom overlaid as a dashed line in
+    the same color, so the CBF's correction is visible as the gap between the
+    two lines -- not just its magnitude (/mpc_status_barriernet/intervention_n),
+    but its direction: does u_nom point away from what the CBF actually allows,
+    or just need a small nudge?"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    names = [n for n in nominal if len(nominal[n]["u"])]
+    if not names:
+        return
+
+    n_dim = nominal[names[0]]["u"].shape[1]
+    fig, axes = plt.subplots(2, (n_dim + 1) // 2, figsize=(6 * ((n_dim + 1) // 2), 8), squeeze=False)
+    axes = axes.flatten()
+
+    for i in range(n_dim):
+        ax = axes[i]
+        for name in names:
+            r = nominal[name]
+            ax.plot(r["s"], r["u"][:, i], lw=1.4, color=COLORS[name], label=f"{name} (applied)")
+            if name == "barriernet" and r.get("u_nom") is not None:
+                ax.plot(r["s"], r["u_nom"][:, i], lw=1.2, ls="--", color=COLORS[name],
+                        alpha=0.7, label="barriernet (u_nom)")
+        ax.grid(alpha=0.3)
+        ax.set_xlabel("arc length s [m]"); ax.set_ylabel(f"u[{i}] [N]")
+        ax.set_title(f"Thruster {i}")
+        if i == 0:
+            ax.legend(fontsize=8)
+    for i in range(n_dim, len(axes)):
+        axes[i].axis("off")
+
+    fig.suptitle("Control actions -- nominal condition (barriernet: applied vs. raw u_nom)")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(out_path, dpi=130)
+    print(f"saved {out_path}")
 
 
 def _plot_disturbed_trajectories(disturbed_runs, path_vec, out_path):
@@ -688,8 +753,10 @@ def _plot_disturbed_trajectories(disturbed_runs, path_vec, out_path):
 
     axes[0].set_ylabel("North [m]")
     axes[0].legend(loc="upper left", fontsize=8)
-    fig.suptitle("Disturbed runs: each controller's own closest approach to its own "
-                "(independently drifting) buoys", fontsize=11)
+    n_dist = max((len(v) for v in disturbed_runs.values()), default=1)
+    fig.suptitle(f"Disturbed condition -- first of {n_dist} disturbed run(s) per controller "
+                f"(not an average): each controller's own closest approach to its own "
+                f"(independently drifting) buoys", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(out_path, dpi=130)
     print(f"saved {out_path}")

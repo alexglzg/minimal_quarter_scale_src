@@ -109,6 +109,6 @@
                 /mpc_status_anmpc/success /mpc_status_anmpc/gammas
                 /mpc_status_barriernet/solve_time_ms /mpc_status_barriernet/model_solve_time_ms
                 /mpc_status_barriernet/success /mpc_status_barriernet/gammas
-                /mpc_status_barriernet/intervention_n" 
+                /mpc_status_barriernet/intervention_n /mpc_status_barriernet/u_nom"
                 if="$(arg record)"/>
 </launch>

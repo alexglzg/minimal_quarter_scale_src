@@ -72,7 +72,12 @@ def sample_scenario(rng):
     obstacles = []
     for i in range(N_REAL_OBS):
         X = first + spacing * i
-        lat = LATERAL * (1 if i % 2 == 0 else -1)
+        # Independently randomized per obstacle within the trained range
+        # (INTEGRATION.md's "obstacle lateral offset from path" = +/-0.2 m) --
+        # previously fixed at exactly +/-LATERAL in a deterministic alternating
+        # pattern, which meant no scenario ever had a near-centered/symmetric
+        # obstacle even though that's within the trained distribution.
+        lat = rng.uniform(-LATERAL, LATERAL)
         obstacles.append(Obstacle(X, float(np.sin(X) + y0 + lat),
                                   float(rng.uniform(*RADIUS_RANGE))))
 

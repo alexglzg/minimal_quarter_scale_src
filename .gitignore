@@ -2,9 +2,10 @@
 *.o
 *.pyc
 *.mtx
+*.csv
 
 # Simulation run outputs (run_scenario.sh / run_all_scenarios.sh)
-/compare_bags/
+/compare_bags*/
 /plots/
 /aggregate_scenarios.csv
 /overnight.log

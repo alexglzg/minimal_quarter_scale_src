@@ -136,6 +136,12 @@ class BarrierNetNode:
             "/mpc_status_barriernet/gammas", Float64MultiArray, queue_size=1)
         self.intervention_pub = rospy.Publisher(
             "/mpc_status_barriernet/intervention_n", Float64, queue_size=1)
+        # Raw (4,) nominal command, not just its distance from u_safe -- lets
+        # offline analysis see the *direction* of the CBF's correction (e.g.
+        # whether u_nom was heading toward an obstacle/averaging two modes),
+        # not just its magnitude.
+        self.u_nom_pub = rospy.Publisher(
+            "/mpc_status_barriernet/u_nom", Float64MultiArray, queue_size=1)
 
         rospy.Subscriber("odometry/filtered", Odometry, self.odom_cb)
         rospy.Subscriber("/buoy_array", BuoyArray, self.buoy_array_cb)
@@ -263,6 +269,7 @@ class BarrierNetNode:
         self.model_solve_time_pub.publish(Float64(model_solve_time * 1000.0))
         self.gammas_pub.publish(Float64MultiArray(data=gammas.flatten().tolist()))
         self.intervention_pub.publish(Float64(float(np.linalg.norm(u - u_nom))))
+        self.u_nom_pub.publish(Float64MultiArray(data=u_nom.tolist()))
 
     def publish_cmd(self, u):
         cmd_msg = Force()
